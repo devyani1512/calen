@@ -37,7 +37,7 @@ def oauth_callback():
         scopes=["https://www.googleapis.com/auth/calendar"],
         state=session["state"]
     )
-    flow.redirect_uri = "http://localhost:5000/oauth2callback"
+    flow.redirect_uri = "https://calen-o3rg.onrender.com/oauth2callback"
     flow.fetch_token(authorization_response=request.url)
 
     creds = flow.credentials
