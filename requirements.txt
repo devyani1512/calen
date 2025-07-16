@@ -1,6 +1,6 @@
 Flask==3.0.2
 Flask-SQLAlchemy==3.1.1
-psycopg2-binary==2.9.10 --only-binary :all:
+psycopg2-binary==2.9.10
 python-dotenv==1.0.1
 openai==1.26.0
 google-auth==2.29.0
@@ -9,3 +9,5 @@ google-auth-httplib2==0.2.0
 google-api-python-client==2.125.0
 python-dateutil==2.9.0.post0
 dateparser==1.2.0
+gunicorn==21.2.0
+
