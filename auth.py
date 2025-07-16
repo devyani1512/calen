@@ -13,7 +13,7 @@ def oauth_login():
     flow = Flow.from_client_config(
         client_config,
         scopes=["https://www.googleapis.com/auth/calendar"],
-        redirect_uri="http://localhost:5000/oauth2callback"  # update if you deploy
+        redirect_uri="https://calen-o3rg.onrender.com"  # update if you deploy
     )
 
     auth_url, state = flow.authorization_url(
