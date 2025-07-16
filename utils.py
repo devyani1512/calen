@@ -1,10 +1,13 @@
 # utils.py
+# utils.py
 
-from openai import OpenAI
+import os
 import json
+from openai import OpenAI
 from calendar_tools import handle_calendar_command
 
-client = OpenAI()
+# Load OpenAI API key from environment
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 def ask_openai(user_input, user):
     tools = [
@@ -12,28 +15,35 @@ def ask_openai(user_input, user):
             "type": "function",
             "function": {
                 "name": "handle_calendar_command",
-                "description": "Handle flexible calendar requests like booking or checking events",
+                "description": "Process calendar requests like booking, availability checking, or finding free slots in natural language.",
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "command": {
                             "type": "string",
-                            "description": "A natural language calendar request, like 'Book a meeting tomorrow at 3 PM'"
+                            "description": "A natural language calendar instruction, e.g., 'Book a meeting tomorrow at 3pm for 1 hour'"
                         }
                     },
                     "required": ["command"]
-                }
+                },
             }
         }
     ]
 
     messages = [
-        {"role": "system", "content": "You are a helpful assistant that can access the user's calendar to check availability, find free slots, and book events. If a message is a calendar request, call the tool provided."},
+        {
+            "role": "system",
+            "content": (
+                "You are a helpful assistant that can access the user's calendar to check availability, "
+                "book meetings, and find free time. If the user message is a calendar-related instruction, "
+                "use the calendar function tool to execute it."
+            )
+        },
         {"role": "user", "content": user_input}
     ]
 
     response = client.chat.completions.create(
-        model="gpt-3.5-turbo",  # Or "gpt-4-turbo" or "gpt-3.5-turbo"
+        model="gpt-4o",  # Or "gpt-4-turbo" if you prefer
         messages=messages,
         tools=tools,
         tool_choice="auto"
@@ -41,13 +51,14 @@ def ask_openai(user_input, user):
 
     message = response.choices[0].message
 
-    # Check if a tool was called
+    # Check if a tool was called by the model
     if message.tool_calls:
         for tool_call in message.tool_calls:
             if tool_call.function.name == "handle_calendar_command":
-                arguments = json.loads(tool_call.function.arguments)
-                command_text = arguments["command"]
-                return handle_calendar_command(command_text, user)
+                try:
+                    args = json.loads(tool_call.function.arguments)
+                    return handle_calendar_command(args["command"], user)
+                except Exception as e:
+                    return f"❌ Error processing calendar request: {str(e)}"
     else:
         return message.content
-
