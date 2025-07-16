@@ -43,7 +43,7 @@ def ask_openai(user_input, user):
     ]
 
     response = client.chat.completions.create(
-        model="gpt-4o",  # Or "gpt-4-turbo" if you prefer
+        model="gpt-3.5-turbo",  # Or "gpt-4-turbo" if you prefer
         messages=messages,
         tools=tools,
         tool_choice="auto"
