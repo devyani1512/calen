@@ -58,7 +58,7 @@ from dotenv import load_dotenv
 # Internal modules
 from models import init_db, db, User
 from utils import ask_openai
-from calendar_tools import handle_calendar_command, get_user_credentials, store_user_credentials
+from calendar_tools import handle_calendar_command, get_user_credentials
 
 # Load environment variables
 load_dotenv()
