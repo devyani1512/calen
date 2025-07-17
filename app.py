@@ -49,7 +49,7 @@
 
 
 from flask import Flask, render_template, request, redirect, session, url_for
-from models import db, init_db  # assuming you renamed db.py to models.py
+from models import db, init_db, User
 from utils import ask_openai
 import os
 
@@ -58,7 +58,7 @@ app.secret_key = os.getenv("FLASK_SECRET_KEY", "supersecretkey")
 app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv("DATABASE_URL", "sqlite:///db.sqlite3")
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
-init_db(app)  # call to initialize the db with app
+init_db(app)
 
 @app.route("/", methods=["GET", "POST"])
 def home():
@@ -67,7 +67,7 @@ def home():
 
     response = None
     if request.method == "POST":
-        user = db.get_or_404(db.Model._decl_class_registry["User"], session["user_id"])
+        user = db.get_or_404(User, session["user_id"])
         user_input = request.form.get("message")
         result = ask_openai(user_input, user)
         response = result
@@ -87,3 +87,4 @@ if __name__ == "__main__":
     with app.app_context():
         db.create_all()
     app.run(debug=True)
+
