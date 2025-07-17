@@ -50,7 +50,7 @@
 
 from flask import Flask, redirect, session, url_for, request, render_template
 from auth import oauth_login, oauth_callback
-from db import db, init_db
+from models import db, init_db         # ✅ FIXED: was 'from db import...'
 from models import User
 from utils import ask_openai
 from calendar_tools import handle_calendar_command
@@ -79,7 +79,7 @@ def logout():
 
 @app.route("/login")
 def login():
-    return oauth_login()  # 🔥 This fixes the placeholder problem
+    return oauth_login()
 
 @app.route("/oauth2callback")
 def oauth2callback():
@@ -96,5 +96,6 @@ def chat():
 
 if __name__ == "__main__":
     app.run(debug=True)
+
 
 
