@@ -1,16 +1,17 @@
+# utils.py
 import os
 import json
 from openai import OpenAI
 from calendar_tools import handle_calendar_command
+from models import get_user_credentials  # Assumes this is in models.py or similar
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-def ask_openai(message, session_id=None, user_id=None):
+def ask_openai(message, user_id):
     try:
         system_prompt = (
             "You are a helpful assistant that helps users manage their Google Calendar. "
-            "You MUST always respond in JSON format using the tool if it's about booking or checking events. "
-            "If it's a casual message, respond normally."
+            "If the user message is about booking/checking/cancelling events, call the calendar tool."
         )
 
         tools = [
@@ -18,27 +19,23 @@ def ask_openai(message, session_id=None, user_id=None):
                 "type": "function",
                 "function": {
                     "name": "handle_calendar_command",
-                    "description": "Book or check Google Calendar based on natural language input",
+                    "description": "Book/check Google Calendar based on natural language",
                     "parameters": {
                         "type": "object",
                         "properties": {
                             "user_input": {
                                 "type": "string",
-                                "description": "The user's original natural language request",
-                            },
-                            "user_id": {
-                                "type": "string",
-                                "description": "The ID of the user (used to fetch credentials)",
+                                "description": "The user's original message",
                             }
                         },
-                        "required": ["user_input", "user_id"],
+                        "required": ["user_input"],
                     },
                 },
             }
         ]
 
         chat_response = client.chat.completions.create(
-            model="gpt-4o",  # or gpt-3.5-turbo
+            model="gpt-3.5-turbo",
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": message}
@@ -51,15 +48,13 @@ def ask_openai(message, session_id=None, user_id=None):
 
         if response_message.tool_calls:
             tool_call = response_message.tool_calls[0]
-            args = json.loads(tool_call.function.arguments)
-            return handle_calendar_command(
-                user_input=args["user_input"],
-                user_id=args["user_id"]
-            )
+            if tool_call.function.name == "handle_calendar_command":
+                user_input_arg = json.loads(tool_call.function.arguments)["user_input"]
+                creds = get_user_credentials(user_id)
+                return handle_calendar_command(user_input_arg, creds)
         else:
             return response_message.content
 
     except Exception as e:
         return f"❌ Assistant error: {str(e)}"
-
 
