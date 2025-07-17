@@ -158,76 +158,95 @@
 # calendar_tool.py
 # utils.py
 # calendar_tools.py
-import os
-import json
 import pytz
-from datetime import datetime, timedelta
-
 import dateparser
+from datetime import datetime, timedelta
 from googleapiclient.discovery import build
-from google.oauth2.credentials import Credentials
-from models import db, User
+from googleapiclient.errors import HttpError
 
-def get_user_credentials(user_id):
-    user = db.session.get(User, user_id)
-    if user and user.credentials_json:
-        credentials_info = json.loads(user.credentials_json)
-        return Credentials.from_authorized_user_info(
-            credentials_info, scopes=["https://www.googleapis.com/auth/calendar"]
-        )
-    return None
+def create_service(creds):
+    return build("calendar", "v3", credentials=creds)
 
-def handle_calendar_command(user_input, user_id):
+def handle_calendar_command(user_input: str, creds):
+    service = create_service(creds)
+    now = datetime.utcnow().isoformat() + "Z"
+
     try:
-        creds = get_user_credentials(user_id)
-        if not creds:
-            return {"message": "❌ User credentials not found. Please log in via Google OAuth.", "success": False}
+        # Booking intent
+        if "book" in user_input.lower() or "schedule" in user_input.lower():
+            event = create_event_from_input(user_input)
+            if not event:
+                return "❌ I couldn't understand the date/time for the event."
 
-        service = build("calendar", "v3", credentials=creds)
-        parsed = parse_input(user_input)
+            inserted_event = service.events().insert(calendarId='primary', body=event).execute()
+            return f"✅ Event booked: {inserted_event.get('summary')} on {inserted_event['start']['dateTime']}"
 
-        if not parsed["start"] or not parsed["end"]:
-            return {"message": "❌ Couldn't understand the date/time. Try something like 'meeting tomorrow at 3pm for 1 hour'", "success": False}
+        # Cancelation intent
+        elif "cancel" in user_input.lower() or "delete" in user_input.lower():
+            events_result = service.events().list(
+                calendarId='primary',
+                timeMin=now,
+                maxResults=10,
+                singleEvents=True,
+                orderBy='startTime'
+            ).execute()
+            events = events_result.get('items', [])
 
-        event = {
-            "summary": parsed["summary"] or "Untitled Event",
-            "start": {"dateTime": parsed["start"], "timeZone": parsed["timezone"]},
-            "end": {"dateTime": parsed["end"], "timeZone": parsed["timezone"]},
-        }
+            for event in events:
+                if event['summary'].lower() in user_input.lower():
+                    service.events().delete(calendarId='primary', eventId=event['id']).execute()
+                    return f"🗑️ Event '{event['summary']}' canceled."
+            return "❌ I couldn't find a matching event to cancel."
 
-        service.events().insert(calendarId="primary", body=event).execute()
+        # Availability intent
+        elif "free" in user_input.lower() or "available" in user_input.lower() or "busy" in user_input.lower():
+            time_min = datetime.utcnow()
+            time_max = time_min + timedelta(days=1)
+            timezone = 'UTC'
 
-        return {
-            "message": f"✅ Event '{event['summary']}' booked from {parsed['start']} to {parsed['end']}",
-            "success": True,
-        }
+            body = {
+                "timeMin": time_min.isoformat() + "Z",
+                "timeMax": time_max.isoformat() + "Z",
+                "timeZone": timezone,
+                "items": [{"id": "primary"}],
+            }
 
-    except Exception as e:
-        return {"message": f"❌ Error: {str(e)}", "success": False}
+            freebusy = service.freebusy().query(body=body).execute()
+            busy_times = freebusy['calendars']['primary']['busy']
 
-def parse_input(text):
-    now = datetime.now()
-    timezone = str(datetime.now().astimezone().tzinfo)
+            if not busy_times:
+                return "🟢 You're free all day today!"
+            else:
+                busy_str = "\n".join(
+                    f"- {b['start']} to {b['end']}" for b in busy_times
+                )
+                return f"🟡 You're busy at:\n{busy_str}"
 
-    # Parse full datetime span
-    dt = dateparser.search.search_dates(text, settings={"RELATIVE_BASE": now})
-    if not dt or len(dt) < 1:
-        return {"start": None, "end": None, "summary": None, "timezone": timezone}
+        else:
+            return "🤖 I understood your message but couldn’t match it to a calendar action like booking, canceling, or checking availability."
 
-    times = [t[1] for t in dt]
-    times.sort()
-    start_time = times[0]
-    end_time = times[1] if len(times) > 1 else start_time + timedelta(hours=1)
+    except HttpError as error:
+        return f"❌ Google Calendar API error: {error}"
 
-    summary = None
-    if '"' in text:
-        summary = text.split('"')[1]
-    elif "'" in text:
-        summary = text.split("'")[1]
+def create_event_from_input(user_input: str):
+    # Use dateparser to flexibly interpret natural date/time
+    dt = dateparser.parse(user_input, settings={"PREFER_DATES_FROM": "future"})
+    if not dt:
+        return None
+
+    start = dt.isoformat()
+    end = (dt + timedelta(hours=1)).isoformat()  # default 1-hour meeting
+    summary = extract_summary(user_input)
 
     return {
-        "start": start_time.isoformat(),
-        "end": end_time.isoformat(),
-        "summary": summary,
-        "timezone": timezone,
+        "summary": summary or "Untitled Event",
+        "start": {"dateTime": start, "timeZone": "UTC"},
+        "end": {"dateTime": end, "timeZone": "UTC"},
     }
+
+def extract_summary(text: str):
+    # Basic heuristic to extract title from input
+    parts = text.split("called") if "called" in text else text.split("about")
+    if len(parts) > 1:
+        return parts[1].strip().capitalize()
+    return "Meeting"
