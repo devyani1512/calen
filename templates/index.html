@@ -1,123 +1,52 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <meta charset="UTF-8">
   <title>Calendar Assistant</title>
-  <style>
-    body {
-      background: #f9f9f9;
-      font-family: 'Segoe UI', sans-serif;
-      max-width: 700px;
-      margin: 30px auto;
-      padding: 20px;
-    }
-
-    h1 {
-      text-align: center;
-      color: #333;
-    }
-
-    #chat-box {
-      background: white;
-      border: 1px solid #ccc;
-      border-radius: 8px;
-      height: 400px;
-      overflow-y: auto;
-      padding: 15px;
-      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-      margin-bottom: 15px;
-    }
-
-    .msg {
-      margin: 10px 0;
-    }
-
-    .user-msg {
-      text-align: right;
-      color: #007bff;
-    }
-
-    .bot-msg {
-      text-align: left;
-      color: #28a745;
-    }
-
-    input[type="text"] {
-      width: 100%;
-      padding: 12px;
-      font-size: 16px;
-      border-radius: 6px;
-      border: 1px solid #ccc;
-      box-shadow: inset 0 1px 2px rgba(0,0,0,0.05);
-    }
-
-    a.login-btn {
-      display: block;
-      text-align: center;
-      margin: 20px auto;
-      padding: 10px 20px;
-      background-color: #4285f4;
-      color: white;
-      border-radius: 5px;
-      text-decoration: none;
-      width: fit-content;
-    }
-
-    a.login-btn:hover {
-      background-color: #357ae8;
-    }
-  </style>
 </head>
-<body>
+<body style="font-family: Arial, sans-serif; background-color: #f2f2f2; margin: 0; padding: 0;">
+  <div style="max-width: 600px; margin: 50px auto; background-color: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);">
+    <h2 style="text-align: center; color: #333;">📅 AI Calendar Assistant</h2>
 
-  <h1>📅 Calendar Assistant</h1>
+    <div id="chat-box" style="height: 300px; overflow-y: auto; border: 1px solid #ddd; padding: 10px; margin-bottom: 15px; background: #fafafa;"></div>
 
-  {% if user %}
-    <div id="chat-box"></div>
-    <input id="user-input" type="text" placeholder="Ask me to book an event, check availability, etc..." />
-  {% else %}
-    <a class="login-btn" href="/login">Login with Google</a>
-  {% endif %}
+    <form id="chat-form" method="POST" action="/chat">
+      <input type="text" name="message" placeholder="Ask something like 'Book a call tomorrow at 5 PM'" 
+             style="width: 80%; padding: 10px; border: 1px solid #ccc; border-radius: 4px;" required>
+      <button type="submit" 
+              style="padding: 10px 15px; background-color: #4CAF50; color: white; border: none; border-radius: 4px;">
+        Send
+      </button>
+    </form>
+
+    <form action="/logout" method="GET" style="text-align: center; margin-top: 20px;">
+      <button type="submit" 
+              style="background-color: #e74c3c; color: white; padding: 8px 12px; border: none; border-radius: 4px;">
+        Logout
+      </button>
+    </form>
+  </div>
 
   <script>
-    {% if user %}
-    const input = document.getElementById("user-input");
     const chatBox = document.getElementById("chat-box");
+    const form = document.getElementById("chat-form");
 
-    input.addEventListener("keypress", function (e) {
-      if (e.key === "Enter" && input.value.trim() !== "") {
-        const message = input.value.trim();
-        appendMessage("You", message, "user-msg");
-        input.value = "";
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const input = form.message.value;
+      chatBox.innerHTML += `<p><strong>You:</strong> ${input}</p>`;
+      form.message.value = "";
 
-        fetch("/", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify({ message: message })
-        })
-        .then(res => res.json())
-        .then(data => {
-          appendMessage("Assistant", data.response, "bot-msg");
-        })
-        .catch(err => {
-          appendMessage("Assistant", "⚠️ Something went wrong.", "bot-msg");
-          console.error(err);
-        });
-      }
-    });
+      const res = await fetch("/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ message: input })
+      });
 
-    function appendMessage(sender, text, className) {
-      const msg = document.createElement("div");
-      msg.className = "msg " + className;
-      msg.innerHTML = `<strong>${sender}:</strong> ${text}`;
-      chatBox.appendChild(msg);
+      const text = await res.text();
+      chatBox.innerHTML += `<p><strong>Assistant:</strong> ${text}</p>`;
       chatBox.scrollTop = chatBox.scrollHeight;
-    }
-    {% endif %}
+    });
   </script>
-
 </body>
 </html>
 
