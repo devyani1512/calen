@@ -156,49 +156,74 @@
 # calendar_tool.py
 
 # calendar_tool.py
-
 import os
+import json
+import pytz
+from datetime import datetime, timedelta
+from dateparser import parse as parse_date
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
-from datetime import datetime, timedelta
-import pytz
-import dateparser
-from utils import get_user_credentials, get_current_user_email
+from models import db, User  # Make sure models.py has User with credentials_json
 
-def book_event_natural(user_id: str, user_input: str):
-    try:
-        # Extract title if mentioned
-        if "with title" in user_input:
-            parts = user_input.split("with title")
-            time_part = parts[0].strip()
-            title = parts[1].strip().strip('"').strip("'")
-        else:
-            time_part = user_input
-            title = "Meeting"
+SCOPES = ["https://www.googleapis.com/auth/calendar"]
 
-        # Parse time using dateparser
-        start_time = dateparser.parse(time_part, settings={"PREFER_DATES_FROM": "future"})
-        if not start_time:
-            return {"message": "❌ Couldn't understand the date/time. Try something like 'meeting tomorrow at 3pm for 1 hour'", "success": False}
+def get_calendar_service(user_id):
+    user = User.query.get(user_id)
+    if not user or not user.credentials_json:
+        raise Exception("User credentials not found. Please log in.")
 
-        end_time = start_time + timedelta(hours=1)
+    creds_dict = json.loads(user.credentials_json)
+    creds = Credentials.from_authorized_user_info(info=creds_dict, scopes=SCOPES)
+    service = build("calendar", "v3", credentials=creds)
+    return service
 
-        # Convert to RFC3339 format and ensure timezone
-        tz = pytz.timezone("Asia/Kolkata")
-        start_time = tz.localize(start_time)
-        end_time = tz.localize(end_time)
+def book_event_natural(text, user_id):
+    event_time = parse_date(text, settings={"PREFER_DATES_FROM": "future"})
+    if not event_time:
+        return "⚠️ Couldn't understand the event time."
 
-        creds = get_user_credentials(user_id)
-        service = build("calendar", "v3", credentials=creds)
+    start_time = event_time.replace(tzinfo=pytz.UTC)
+    end_time = start_time + timedelta(hours=1)
 
-        event = {
-            "summary": title,
-            "start": {"dateTime": start_time.isoformat()},
-            "end": {"dateTime": end_time.isoformat()},
-        }
+    event = {
+        "summary": text,
+        "start": {"dateTime": start_time.isoformat()},
+        "end": {"dateTime": end_time.isoformat()},
+    }
 
-        event = service.events().insert(calendarId="primary", body=event).execute()
-        return {"message": f"✅ Event '{title}' booked from {start_time.strftime('%I:%M %p')} to {end_time.strftime('%I:%M %p')}", "success": True}
+    service = get_calendar_service(user_id)
+    event = service.events().insert(calendarId="primary", body=event).execute()
+    return f"✅ Event created: {event.get('htmlLink')}"
 
-    except Exception as e:
-        return {"message": f"❌ Error booking event: {str(e)}", "success": False}
+def check_schedule_day(user_id, date=None):
+    service = get_calendar_service(user_id)
+    now = datetime.utcnow().replace(tzinfo=pytz.UTC)
+    if date:
+        start = parse_date(date).replace(tzinfo=pytz.UTC)
+    else:
+        start = now
+
+    end = start + timedelta(days=1)
+    events_result = service.events().list(
+        calendarId="primary", timeMin=start.isoformat(), timeMax=end.isoformat(),
+        singleEvents=True, orderBy="startTime"
+    ).execute()
+
+    events = events_result.get("items", [])
+    if not events:
+        return "📅 No events scheduled for the day."
+
+    schedule = "\n".join(
+        f"- {e['summary']} at {e['start'].get('dateTime', e['start'].get('date'))}"
+        for e in events
+    )
+    return f"📅 Your events:\n{schedule}"
+
+def handle_calendar_command(user_input, user_id):
+    text = user_input.lower()
+    if "book" in text or "schedule" in text or "add event" in text:
+        return book_event_natural(text, user_id)
+    elif "what" in text or "check" in text or "today" in text or "events" in text:
+        return check_schedule_day(user_id)
+    else:
+        return "🤖 Sorry, I couldn't understand. Please rephrase your request."
