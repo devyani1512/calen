@@ -155,70 +155,50 @@
 # calendar_tool.py
 # calendar_tool.py
 
+# calendar_tool.py
+
 import os
-import json
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from datetime import datetime, timedelta
+import pytz
 import dateparser
-from flask import session
+from utils import get_user_credentials, get_current_user_email
 
-def get_calendar_service():
-    user_info = session.get("user_credentials")
-    if not user_info:
-        raise Exception("User not logged in or missing credentials in session.")
-
-    creds = Credentials.from_authorized_user_info(user_info, scopes=[
-        "https://www.googleapis.com/auth/calendar"
-    ])
-    return build("calendar", "v3", credentials=creds)
-
-def handle_calendar_command(user_input: str) -> str:
+def book_event_natural(user_id: str, user_input: str):
     try:
-        if "book" in user_input.lower() or "meeting" in user_input.lower():
-            return book_event_natural(user_input)
-        elif "availability" in user_input.lower() or "free" in user_input.lower():
-            return check_availability_natural(user_input)
+        # Extract title if mentioned
+        if "with title" in user_input:
+            parts = user_input.split("with title")
+            time_part = parts[0].strip()
+            title = parts[1].strip().strip('"').strip("'")
         else:
-            return "Sorry, I couldn't understand the calendar command."
+            time_part = user_input
+            title = "Meeting"
+
+        # Parse time using dateparser
+        start_time = dateparser.parse(time_part, settings={"PREFER_DATES_FROM": "future"})
+        if not start_time:
+            return {"message": "❌ Couldn't understand the date/time. Try something like 'meeting tomorrow at 3pm for 1 hour'", "success": False}
+
+        end_time = start_time + timedelta(hours=1)
+
+        # Convert to RFC3339 format and ensure timezone
+        tz = pytz.timezone("Asia/Kolkata")
+        start_time = tz.localize(start_time)
+        end_time = tz.localize(end_time)
+
+        creds = get_user_credentials(user_id)
+        service = build("calendar", "v3", credentials=creds)
+
+        event = {
+            "summary": title,
+            "start": {"dateTime": start_time.isoformat()},
+            "end": {"dateTime": end_time.isoformat()},
+        }
+
+        event = service.events().insert(calendarId="primary", body=event).execute()
+        return {"message": f"✅ Event '{title}' booked from {start_time.strftime('%I:%M %p')} to {end_time.strftime('%I:%M %p')}", "success": True}
+
     except Exception as e:
-        return f"❌ Calendar error: {str(e)}"
-
-def book_event_natural(user_input: str) -> str:
-    service = get_calendar_service()
-
-    # basic date/time parsing
-    start_time = dateparser.parse(user_input)
-    if not start_time:
-        return "❌ Could not understand date/time."
-
-    end_time = start_time + timedelta(hours=1)
-
-    event = {
-        "summary": "Auto Event",
-        "description": f"Scheduled from natural input: {user_input}",
-        "start": {"dateTime": start_time.isoformat(), "timeZone": "Asia/Kolkata"},
-        "end": {"dateTime": end_time.isoformat(), "timeZone": "Asia/Kolkata"},
-    }
-
-    service.events().insert(calendarId="primary", body=event).execute()
-    return f"✅ Event booked from {start_time.strftime('%I:%M %p')} to {end_time.strftime('%I:%M %p')}"
-
-def check_availability_natural(user_input: str) -> str:
-    service = get_calendar_service()
-    now = datetime.utcnow().isoformat() + "Z"
-    events_result = service.events().list(
-        calendarId="primary", timeMin=now, maxResults=10, singleEvents=True, orderBy="startTime"
-    ).execute()
-    events = events_result.get("items", [])
-
-    if not events:
-        return "✅ You have no upcoming events."
-
-    msg = "📅 Your upcoming events:\n"
-    for event in events:
-        start = event["start"].get("dateTime", event["start"].get("date"))
-        msg += f"- {event['summary']} at {start}\n"
-
-    return msg
-
+        return {"message": f"❌ Error booking event: {str(e)}", "success": False}
