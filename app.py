@@ -48,125 +48,142 @@
 #     app.run(debug=True)
 import os
 import json
-from flask import Flask, redirect, url_for, request, session, render_template_string
+from flask import Flask, redirect, url_for, session, request, render_template_string
 from flask_sqlalchemy import SQLAlchemy
 from google_auth_oauthlib.flow import Flow
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
+from models import db, User
 from utils import ask_openai
-from models import db, User, init_db
 
 app = Flask(__name__)
-app.secret_key = os.getenv("FLASK_SECRET_KEY", "your-default-dev-secret")
+app.secret_key = os.getenv("SECRET_KEY", "dev")  # Change in production
 
-# PostgreSQL database from Neon
-app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv("DATABASE_URL")
-init_db(app)
+# === Configure DB ===
+DATABASE_URL = os.getenv("DATABASE_URL")
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
-# Load Google OAuth client config from env
+app.config["SQLALCHEMY_DATABASE_URI"] = DATABASE_URL
+app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+db.init_app(app)
+
+# === Load client config from environment ===
 CLIENT_CONFIG_JSON = os.getenv("CLIENT_CONFIG_JSON")
-if not CLIENT_CONFIG_JSON:
-    raise RuntimeError("CLIENT_CONFIG_JSON not set in environment.")
+client_config = json.loads(CLIENT_CONFIG_JSON)
 
-CLIENT_SECRETS = json.loads(CLIENT_CONFIG_JSON)
-SCOPES = ["https://www.googleapis.com/auth/calendar"]
+SCOPES = [
+    "https://www.googleapis.com/auth/calendar",
+    "https://www.googleapis.com/auth/userinfo.email",
+    "https://www.googleapis.com/auth/userinfo.profile",
+    "openid",
+]
 
-# Routes
+# === Home Page ===
+@app.route("/", methods=["GET", "POST"])
+def index():
+    user_email = session.get("user_email")
+    if request.method == "POST":
+        query = request.form.get("query")
+        if user_email:
+            user = User.query.filter_by(email=user_email).first()
+            if user:
+                credentials_info = json.loads(user.credentials_json)
+                creds = Credentials.from_authorized_user_info(credentials_info, SCOPES)
+                response = ask_openai(query, creds)
+                return render_template_string(PAGE_HTML, user_email=user_email, response=response)
+        return render_template_string(PAGE_HTML, error="You need to log in to ask something.")
+    return render_template_string(PAGE_HTML, user_email=user_email)
 
-@app.route("/")
-def home():
-    return render_template_string("""
-        <h2>Google Calendar Assistant</h2>
-        {% if "user_id" in session %}
-            <p>Welcome back! <a href='/logout'>Logout</a></p>
-            <form method="POST" action="/ask">
-                <input name="query" placeholder="e.g. Book meeting tomorrow 2pm" style="width:300px"/>
-                <button>Ask</button>
-            </form>
-        {% else %}
-            <a href="/login">Login with Google</a>
-        {% endif %}
-    """)
 
-
+# === Login ===
 @app.route("/login")
 def login():
     flow = Flow.from_client_config(
-        CLIENT_SECRETS,
+        client_config,
         scopes=SCOPES,
         redirect_uri=url_for("oauth2callback", _external=True),
     )
     auth_url, state = flow.authorization_url(
-        access_type="offline", include_granted_scopes="true"
+        access_type="offline",
+        include_granted_scopes="true",
+        prompt="consent"
     )
     session["state"] = state
     return redirect(auth_url)
 
 
+# === OAuth2 Callback ===
 @app.route("/oauth2callback")
 def oauth2callback():
     state = session.get("state")
-    if not state:
-        return "Missing OAuth state", 400
-
     flow = Flow.from_client_config(
-        CLIENT_SECRETS,
+        client_config,
         scopes=SCOPES,
-        redirect_uri=url_for("oauth2callback", _external=True),
         state=state,
+        redirect_uri=url_for("oauth2callback", _external=True),
     )
-    
-    flow.fetch_token(
-    authorization_response=request.url,
-    client_secret=client_config["installed"]["client_secret"]
-)
-    credentials = flow.credentials
+    flow.fetch_token(authorization_response=request.url)
+    creds = flow.credentials
 
-    # Get user info from calendar API
-    service = build("calendar", "v3", credentials=credentials)
-    profile = service.settings().get(setting="user").execute()
-    email = profile.get("value")
+    # Get user info
+    userinfo_service = build("oauth2", "v2", credentials=creds)
+    userinfo = userinfo_service.userinfo().get().execute()
 
-    if not email:
-        return "Could not get email from calendar API.", 500
+    email = userinfo["email"]
+    name = userinfo.get("name", "")
 
+    # Save or update user in DB
     user = User.query.filter_by(email=email).first()
-    if not user:
-        user = User(email=email, credentials_json=json.dumps(credentials.to_json()))
-        db.session.add(user)
+    if user:
+        user.credentials_json = json.dumps(json.loads(creds.to_json()))
     else:
-        user.credentials_json = json.dumps(credentials.to_json())
+        user = User(
+            email=email,
+            name=name,
+            credentials_json=json.dumps(json.loads(creds.to_json()))
+        )
+        db.session.add(user)
     db.session.commit()
 
-    session["user_id"] = user.id
-    return redirect(url_for("home"))
+    session["user_email"] = email
+    return redirect(url_for("index"))
 
 
-@app.route("/ask", methods=["POST"])
-def ask():
-    user_id = session.get("user_id")
-    if not user_id:
-        return redirect(url_for("login"))
-
-    query = request.form.get("query")
-    user = db.session.get(User, user_id)
-    if not user:
-        return "User not found", 400
-
-    creds = get_user_credentials(user)
-    response = ask_openai(query, creds)
-    return render_template_string("""
-        <p><strong>You asked:</strong> {{query}}</p>
-        <p><strong>Assistant:</strong> {{response}}</p>
-        <a href="/">Go back</a>
-    """, query=query, response=response)
-
-
+# === Logout ===
 @app.route("/logout")
 def logout():
     session.clear()
-    return redirect(url_for("home"))
+    return redirect(url_for("index"))
 
+
+# === HTML Template ===
+PAGE_HTML = """
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Calendar Assistant</title>
+</head>
+<body>
+    {% if user_email %}
+        <p>Logged in as: {{ user_email }}</p>
+        <form method="POST">
+            <input type="text" name="query" placeholder="Ask something..." required>
+            <button type="submit">Ask</button>
+        </form>
+        {% if response %}
+            <p><b>Response:</b> {{ response }}</p>
+        {% endif %}
+        <a href="{{ url_for('logout') }}">Logout</a>
+    {% else %}
+        <a href="{{ url_for('login') }}">Login with Google</a>
+    {% endif %}
+    {% if error %}
+        <p style="color:red">{{ error }}</p>
+    {% endif %}
+</body>
+</html>
+"""
 
 if __name__ == "__main__":
     app.run(debug=True)
