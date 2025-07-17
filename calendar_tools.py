@@ -152,55 +152,66 @@
 
 # calendar_tools.py
 
-import os
-import json
-import pytz
-from datetime import timedelta
-from dateparser.search import search_dates
-from google.oauth2.credentials import Credentials
+# calendar_tool.py
+
 from googleapiclient.discovery import build
+from google.oauth2.credentials import Credentials
+import pytz
+import dateparser
+from datetime import datetime, timedelta
 
-# Load client config from env
-client_config = json.loads(os.getenv("CLIENT_CONFIG_JSON", "{}"))
-CLIENT_ID = client_config["installed"]["client_id"]
-CLIENT_SECRET = client_config["installed"]["client_secret"]
+def build_calendar_service(user_tokens: dict):
+    creds = Credentials.from_authorized_user_info(user_tokens)
+    service = build("calendar", "v3", credentials=creds)
+    return service
 
-def get_google_calendar_service(user_obj):
-    credentials = Credentials(
-        token=user_obj.access_token,
-        refresh_token=user_obj.refresh_token,
-        token_uri="https://oauth2.googleapis.com/token",
-        client_id=CLIENT_ID,
-        client_secret=CLIENT_SECRET,
-        scopes=["https://www.googleapis.com/auth/calendar"]
-    )
-    return build("calendar", "v3", credentials=credentials)
+def parse_date(text, timezone="Asia/Kolkata"):
+    settings = {'TIMEZONE': timezone, 'RETURN_AS_TIMEZONE_AWARE': True}
+    return dateparser.parse(text, settings=settings)
 
-def handle_calendar_command(command, user_obj):
+def handle_calendar_command(command: str, user_tokens: dict) -> str:
     try:
-        results = search_dates(command, settings={"TIMEZONE": "Asia/Kolkata", "RETURN_AS_TIMEZONE_AWARE": True})
-        print("🕐 Detected time phrases:", results)
+        service = build_calendar_service(user_tokens)
+        timezone = "Asia/Kolkata"
+        now = datetime.now(pytz.timezone(timezone))
+        events_result = service.events().list(
+            calendarId='primary',
+            timeMin=now.isoformat(),
+            maxResults=5,
+            singleEvents=True,
+            orderBy='startTime'
+        ).execute()
 
-        if not results or len(results) < 2:
-            return {"message": "❌ Couldn't understand the date/time. Try something like 'meeting tomorrow at 3pm for 1 hour'", "success": False}
+        events = events_result.get('items', [])
 
-        start = results[0][1]
-        end = results[1][1]
+        if "what" in command.lower() and "schedule" in command.lower():
+            if not events:
+                return "You have no upcoming events."
+            response = "Your next events:\n"
+            for event in events:
+                start = event['start'].get('dateTime', event['start'].get('date'))
+                response += f"- {event['summary']} at {start}\n"
+            return response
 
-        service = get_google_calendar_service(user_obj)
+        elif "book" in command.lower() or "add" in command.lower():
+            # naive example: "book meeting tomorrow at 3pm"
+            summary = "Meeting"
+            start_time = parse_date(command, timezone)
+            if not start_time:
+                return "Couldn't parse the time from your command."
 
-        event = {
-            'summary': 'Meeting',
-            'start': {'dateTime': start.isoformat(), 'timeZone': 'Asia/Kolkata'},
-            'end': {'dateTime': end.isoformat(), 'timeZone': 'Asia/Kolkata'},
-        }
+            end_time = start_time + timedelta(hours=1)
 
-        event = service.events().insert(calendarId='primary', body=event).execute()
-        return {
-            "message": f"✅ Meeting booked from {start.strftime('%I:%M %p')} to {end.strftime('%I:%M %p')} on {start.strftime('%d %b, %Y')}",
-            "success": True,
-            "eventLink": event.get('htmlLink')
-        }
+            event = {
+                'summary': summary,
+                'start': {'dateTime': start_time.isoformat(), 'timeZone': timezone},
+                'end': {'dateTime': end_time.isoformat(), 'timeZone': timezone},
+            }
+            created_event = service.events().insert(calendarId='primary', body=event).execute()
+            return f"Event created: {created_event.get('htmlLink')}"
 
+        else:
+            return "Sorry, I didn't understand your calendar request."
     except Exception as e:
-        return {"message": f"❌ Error booking meeting: {str(e)}", "success": False}
+        return f"An error occurred: {str(e)}"
+
