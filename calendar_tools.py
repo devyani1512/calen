@@ -153,65 +153,62 @@
 # calendar_tools.py
 
 # calendar_tool.py
+# calendar_tool.py
 
-from googleapiclient.discovery import build
-from google.oauth2.credentials import Credentials
+import json
+import os
+from datetime import datetime, timedelta
 import pytz
 import dateparser
-from datetime import datetime, timedelta
+from google.oauth2.credentials import Credentials
+from googleapiclient.discovery import build
 
-def build_calendar_service(user_tokens: dict):
-    creds = Credentials.from_authorized_user_info(user_tokens)
-    service = build("calendar", "v3", credentials=creds)
-    return service
+def get_calendar_service(user_token_info: dict):
+    credentials = Credentials.from_authorized_user_info(user_token_info)
+    return build("calendar", "v3", credentials=credentials)
 
-def parse_date(text, timezone="Asia/Kolkata"):
-    settings = {'TIMEZONE': timezone, 'RETURN_AS_TIMEZONE_AWARE': True}
-    return dateparser.parse(text, settings=settings)
+def parse_time(text, ref=None):
+    dt = dateparser.parse(text, settings={"RELATIVE_BASE": ref or datetime.now()})
+    if not dt:
+        raise ValueError(f"Could not parse time from input: {text}")
+    return dt.astimezone(pytz.utc)
 
-def handle_calendar_command(command: str, user_tokens: dict) -> str:
-    try:
-        service = build_calendar_service(user_tokens)
-        timezone = "Asia/Kolkata"
-        now = datetime.now(pytz.timezone(timezone))
-        events_result = service.events().list(
-            calendarId='primary',
-            timeMin=now.isoformat(),
-            maxResults=5,
-            singleEvents=True,
-            orderBy='startTime'
-        ).execute()
+def check_availability(user_token_info: dict, time_range: str):
+    start = parse_time(time_range)
+    end = start + timedelta(hours=1)
 
-        events = events_result.get('items', [])
+    service = get_calendar_service(user_token_info)
+    events_result = service.events().list(
+        calendarId="primary",
+        timeMin=start.isoformat(),
+        timeMax=end.isoformat(),
+        singleEvents=True,
+        orderBy="startTime"
+    ).execute()
 
-        if "what" in command.lower() and "schedule" in command.lower():
-            if not events:
-                return "You have no upcoming events."
-            response = "Your next events:\n"
-            for event in events:
-                start = event['start'].get('dateTime', event['start'].get('date'))
-                response += f"- {event['summary']} at {start}\n"
-            return response
+    events = events_result.get("items", [])
+    return "available" if not events else "busy"
 
-        elif "book" in command.lower() or "add" in command.lower():
-            # naive example: "book meeting tomorrow at 3pm"
-            summary = "Meeting"
-            start_time = parse_date(command, timezone)
-            if not start_time:
-                return "Couldn't parse the time from your command."
+def book_event(user_token_info: dict, summary: str, time_text: str):
+    start = parse_time(time_text)
+    end = start + timedelta(hours=1)
 
-            end_time = start_time + timedelta(hours=1)
+    service = get_calendar_service(user_token_info)
+    event = {
+        "summary": summary,
+        "start": {"dateTime": start.isoformat(), "timeZone": "UTC"},
+        "end": {"dateTime": end.isoformat(), "timeZone": "UTC"},
+    }
+    created_event = service.events().insert(calendarId="primary", body=event).execute()
+    return f"Event '{created_event['summary']}' booked on {created_event['start']['dateTime']}."
 
-            event = {
-                'summary': summary,
-                'start': {'dateTime': start_time.isoformat(), 'timeZone': timezone},
-                'end': {'dateTime': end_time.isoformat(), 'timeZone': timezone},
-            }
-            created_event = service.events().insert(calendarId='primary', body=event).execute()
-            return f"Event created: {created_event.get('htmlLink')}"
+def handle_calendar_command(user_token_info: dict, user_input: str):
+    if "available" in user_input:
+        return check_availability(user_token_info, user_input)
+    elif "book" in user_input or "schedule" in user_input:
+        # Very naive extraction logic. Customize this later.
+        return book_event(user_token_info, summary="Meeting", time_text=user_input)
+    else:
+        return "Sorry, I couldn't understand your request."
 
-        else:
-            return "Sorry, I didn't understand your calendar request."
-    except Exception as e:
-        return f"An error occurred: {str(e)}"
 
