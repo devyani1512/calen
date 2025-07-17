@@ -52,7 +52,7 @@ import os, json
 from dotenv import load_dotenv
 from google_auth_oauthlib.flow import Flow
 from google.oauth2.credentials import Credentials
-from utils import ask_openai, store_user_credentials, get_user_credentials
+from utils import ask_openai
 from models import db, init_db, User
 
 load_dotenv()
