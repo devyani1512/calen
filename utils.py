@@ -1,15 +1,12 @@
-# utils.py
-# utils.py
-
 import os
 import json
 from openai import OpenAI
-from calendar_tools import handle_calendar_command
+from calendar_tool import handle_calendar_command
 
-# Load OpenAI API key from environment
+# Initialize OpenAI client
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-def ask_openai(user_input, user):
+def ask_openai(user_input, user_obj):
     tools = [
         {
             "type": "function",
@@ -43,7 +40,7 @@ def ask_openai(user_input, user):
     ]
 
     response = client.chat.completions.create(
-        model="gpt-3.5-turbo",  # Or "gpt-4-turbo" if you prefer
+        model="gpt-3.5-turbo",
         messages=messages,
         tools=tools,
         tool_choice="auto"
@@ -51,13 +48,12 @@ def ask_openai(user_input, user):
 
     message = response.choices[0].message
 
-    # Check if a tool was called by the model
     if message.tool_calls:
         for tool_call in message.tool_calls:
             if tool_call.function.name == "handle_calendar_command":
                 try:
                     args = json.loads(tool_call.function.arguments)
-                    return handle_calendar_command(args["command"], user)
+                    return handle_calendar_command(args["command"], user_obj)
                 except Exception as e:
                     return f"❌ Error processing calendar request: {str(e)}"
     else:
