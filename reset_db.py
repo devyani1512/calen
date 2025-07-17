@@ -1,6 +1,10 @@
 # reset_db.py
 
-from your_app_file import app, db  # Replace with the actual app module
+
+# reset_db.py
+
+from app import app
+from models import db
 
 with app.app_context():
     db.drop_all()
