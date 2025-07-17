@@ -1,17 +1,17 @@
-# utils.py
 import os
 import json
 from openai import OpenAI
+from flask import session
 from calendar_tools import handle_calendar_command
-from models import get_user_credentials  # Assumes this is in models.py or similar
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-def ask_openai(message, user_id):
+def ask_openai(message):
     try:
         system_prompt = (
-            "You are a helpful assistant that helps users manage their Google Calendar. "
-            "If the user message is about booking/checking/cancelling events, call the calendar tool."
+            "You are a helpful assistant that manages a user's Google Calendar. "
+            "Always use the tool to handle any calendar-related query like booking, checking, or canceling events. "
+            "Otherwise, respond casually."
         )
 
         tools = [
@@ -19,18 +19,18 @@ def ask_openai(message, user_id):
                 "type": "function",
                 "function": {
                     "name": "handle_calendar_command",
-                    "description": "Book/check Google Calendar based on natural language",
+                    "description": "Handles Google Calendar commands like booking or checking availability",
                     "parameters": {
                         "type": "object",
                         "properties": {
                             "user_input": {
                                 "type": "string",
-                                "description": "The user's original message",
+                                "description": "The user's original calendar command"
                             }
                         },
-                        "required": ["user_input"],
-                    },
-                },
+                        "required": ["user_input"]
+                    }
+                }
             }
         ]
 
@@ -48,13 +48,13 @@ def ask_openai(message, user_id):
 
         if response_message.tool_calls:
             tool_call = response_message.tool_calls[0]
-            if tool_call.function.name == "handle_calendar_command":
-                user_input_arg = json.loads(tool_call.function.arguments)["user_input"]
-                creds = get_user_credentials(user_id)
-                return handle_calendar_command(user_input_arg, creds)
+            arguments = json.loads(tool_call.function.arguments)
+            user_input_arg = arguments["user_input"]
+            return handle_calendar_command(user_input_arg, session.get("user_id"))
         else:
             return response_message.content
 
     except Exception as e:
         return f"❌ Assistant error: {str(e)}"
+
 
