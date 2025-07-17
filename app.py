@@ -49,15 +49,16 @@
 
 
 from flask import Flask, render_template, request, redirect, session, url_for
-from flask_sqlalchemy import SQLAlchemy
-from db import db, User  # Assuming you have your db models in db.py
-from utils import ask_openai  # Your main function that processes the prompt and returns reply
+from models import db, init_db  # assuming you renamed db.py to models.py
+from utils import ask_openai
 import os
 
 app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "supersecretkey")
 app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv("DATABASE_URL", "sqlite:///db.sqlite3")
-db.init_app(app)
+app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+
+init_db(app)  # call to initialize the db with app
 
 @app.route("/", methods=["GET", "POST"])
 def home():
@@ -66,10 +67,10 @@ def home():
 
     response = None
     if request.method == "POST":
-        user = db.get_or_404(User, session["user_id"])
+        user = db.get_or_404(db.Model._decl_class_registry["User"], session["user_id"])
         user_input = request.form.get("message")
         result = ask_openai(user_input, user)
-        response = result  # adjust this if `ask_openai` returns a dict
+        response = result
 
     return render_template("index.html", response=response)
 
