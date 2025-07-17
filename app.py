@@ -51,7 +51,7 @@
 from flask import Flask, render_template, request, redirect, session, url_for
 from flask_sqlalchemy import SQLAlchemy
 from db import db, User  # Assuming you have your db models in db.py
-from assistant import ask_openai  # Your main function that processes the prompt and returns reply
+from utils import ask_openai  # Your main function that processes the prompt and returns reply
 import os
 
 app = Flask(__name__)
