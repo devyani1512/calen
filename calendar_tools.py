@@ -150,59 +150,52 @@
 #         return {"success": False, "message": "🤖 Sorry, I couldn't understand the calendar command."}
 # calendar_tools.py
 
+# calendar_tools.py
+
 import os
+from datetime import datetime, timedelta
 import pytz
-from datetime import timedelta
-from dateparser.search import search_dates
+import dateparser
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 
-def get_google_calendar_service(user):
+def handle_calendar_command(command, user):
+    parsed_time = dateparser.parse(command, settings={'PREFER_DATES_FROM': 'future'})
+
+    if not parsed_time:
+        return {"message": "❌ Couldn't understand the date/time. Try something like 'meeting tomorrow at 3pm for 1 hour'", "success": False}
+
+    start_time = parsed_time
+    end_time = start_time + timedelta(hours=1)
+
+    timezone = pytz.timezone("Asia/Kolkata")
+    start_time = timezone.localize(start_time)
+    end_time = timezone.localize(end_time)
+
+    # ✅ Fixed: Use dot notation for SQLAlchemy user object
     credentials = Credentials(
-        token=user["access_token"],
-        refresh_token=user["refresh_token"],
+        token=user.access_token,
+        refresh_token=user.refresh_token,
         token_uri="https://oauth2.googleapis.com/token",
         client_id=os.getenv("GOOGLE_CLIENT_ID"),
         client_secret=os.getenv("GOOGLE_CLIENT_SECRET"),
         scopes=["https://www.googleapis.com/auth/calendar"]
     )
-    return build("calendar", "v3", credentials=credentials)
 
-def handle_calendar_command(command, user):
+    service = build("calendar", "v3", credentials=credentials)
+
+    event = {
+        "summary": "Scheduled Meeting",
+        "start": {"dateTime": start_time.isoformat(), "timeZone": "Asia/Kolkata"},
+        "end": {"dateTime": end_time.isoformat(), "timeZone": "Asia/Kolkata"},
+    }
+
     try:
-        # Extract time phrases from user input
-        results = search_dates(command, settings={"TIMEZONE": "Asia/Kolkata", "RETURN_AS_TIMEZONE_AWARE": True})
-        print("🕐 Detected time phrases:", results)  # For debugging
-
-        if not results or len(results) < 2:
-            return {"message": "❌ Couldn't understand the date/time. Try something like 'meeting tomorrow at 3pm for 1 hour'", "success": False}
-
-        # Extract start and end datetime objects
-        start = results[0][1]
-        end = results[1][1]
-
-        # Get user's calendar service
-        service = get_google_calendar_service(user)
-
-        event = {
-            'summary': 'Meeting',
-            'start': {
-                'dateTime': start.isoformat(),
-                'timeZone': 'Asia/Kolkata',
-            },
-            'end': {
-                'dateTime': end.isoformat(),
-                'timeZone': 'Asia/Kolkata',
-            },
-        }
-
-        event = service.events().insert(calendarId='primary', body=event).execute()
+        event_result = service.events().insert(calendarId="primary", body=event).execute()
         return {
-            "message": f"✅ Meeting booked from {start.strftime('%I:%M %p')} to {end.strftime('%I:%M %p')} on {start.strftime('%d %b, %Y')}",
+            "message": f"✅ Meeting booked from {start_time.strftime('%I:%M %p')} to {end_time.strftime('%I:%M %p')} on {start_time.strftime('%d %b, %Y')}",
             "success": True,
-            "eventLink": event.get('htmlLink')
+            "event_link": event_result.get("htmlLink")
         }
-
     except Exception as e:
         return {"message": f"❌ Error booking meeting: {str(e)}", "success": False}
-
