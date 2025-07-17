@@ -156,74 +156,62 @@
 # calendar_tool.py
 
 # calendar_tool.py
+# utils.py
 import os
 import json
-import pytz
-from datetime import datetime, timedelta
-from dateparser import parse as parse_date
-from google.oauth2.credentials import Credentials
-from googleapiclient.discovery import build
-from models import db, User  # Make sure models.py has User with credentials_json
+from openai import OpenAI
+from calendar_tools import handle_calendar_command
+from models import get_user_credentials  # Assumes this is in models.py or similar
 
-SCOPES = ["https://www.googleapis.com/auth/calendar"]
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-def get_calendar_service(user_id):
-    user = User.query.get(user_id)
-    if not user or not user.credentials_json:
-        raise Exception("User credentials not found. Please log in.")
+def ask_openai(message, user_id):
+    try:
+        system_prompt = (
+            "You are a helpful assistant that helps users manage their Google Calendar. "
+            "If the user message is about booking/checking/cancelling events, call the calendar tool."
+        )
 
-    creds_dict = json.loads(user.credentials_json)
-    creds = Credentials.from_authorized_user_info(info=creds_dict, scopes=SCOPES)
-    service = build("calendar", "v3", credentials=creds)
-    return service
+        tools = [
+            {
+                "type": "function",
+                "function": {
+                    "name": "handle_calendar_command",
+                    "description": "Book/check Google Calendar based on natural language",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "user_input": {
+                                "type": "string",
+                                "description": "The user's original message",
+                            }
+                        },
+                        "required": ["user_input"],
+                    },
+                },
+            }
+        ]
 
-def book_event_natural(text, user_id):
-    event_time = parse_date(text, settings={"PREFER_DATES_FROM": "future"})
-    if not event_time:
-        return "⚠️ Couldn't understand the event time."
+        chat_response = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": message}
+            ],
+            tools=tools,
+            tool_choice="auto"
+        )
 
-    start_time = event_time.replace(tzinfo=pytz.UTC)
-    end_time = start_time + timedelta(hours=1)
+        response_message = chat_response.choices[0].message
 
-    event = {
-        "summary": text,
-        "start": {"dateTime": start_time.isoformat()},
-        "end": {"dateTime": end_time.isoformat()},
-    }
+        if response_message.tool_calls:
+            tool_call = response_message.tool_calls[0]
+            if tool_call.function.name == "handle_calendar_command":
+                user_input_arg = json.loads(tool_call.function.arguments)["user_input"]
+                creds = get_user_credentials(user_id)
+                return handle_calendar_command(user_input_arg, creds)
+        else:
+            return response_message.content
 
-    service = get_calendar_service(user_id)
-    event = service.events().insert(calendarId="primary", body=event).execute()
-    return f"✅ Event created: {event.get('htmlLink')}"
-
-def check_schedule_day(user_id, date=None):
-    service = get_calendar_service(user_id)
-    now = datetime.utcnow().replace(tzinfo=pytz.UTC)
-    if date:
-        start = parse_date(date).replace(tzinfo=pytz.UTC)
-    else:
-        start = now
-
-    end = start + timedelta(days=1)
-    events_result = service.events().list(
-        calendarId="primary", timeMin=start.isoformat(), timeMax=end.isoformat(),
-        singleEvents=True, orderBy="startTime"
-    ).execute()
-
-    events = events_result.get("items", [])
-    if not events:
-        return "📅 No events scheduled for the day."
-
-    schedule = "\n".join(
-        f"- {e['summary']} at {e['start'].get('dateTime', e['start'].get('date'))}"
-        for e in events
-    )
-    return f"📅 Your events:\n{schedule}"
-
-def handle_calendar_command(user_input, user_id):
-    text = user_input.lower()
-    if "book" in text or "schedule" in text or "add event" in text:
-        return book_event_natural(text, user_id)
-    elif "what" in text or "check" in text or "today" in text or "events" in text:
-        return check_schedule_day(user_id)
-    else:
-        return "🤖 Sorry, I couldn't understand. Please rephrase your request."
+    except Exception as e:
+        return f"❌ Assistant error: {str(e)}"
