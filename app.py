@@ -115,7 +115,11 @@ def oauth2callback():
         redirect_uri=url_for("oauth2callback", _external=True),
         state=state,
     )
-    flow.fetch_token(authorization_response=request.url)
+    
+    flow.fetch_token(
+    authorization_response=request.url,
+    client_secret=client_config["installed"]["client_secret"]
+)
     credentials = flow.credentials
 
     # Get user info from calendar API
