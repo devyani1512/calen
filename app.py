@@ -48,108 +48,121 @@
 #     app.run(debug=True)
 import os
 import json
-from flask import Flask, redirect, url_for, session, request, render_template
+from flask import Flask, redirect, url_for, request, session, render_template_string
 from flask_sqlalchemy import SQLAlchemy
-from flask_session import Session
 from google_auth_oauthlib.flow import Flow
 from google.oauth2.credentials import Credentials
-from dotenv import load_dotenv
-
-# Internal modules
-from models import init_db, db, User
+from googleapiclient.discovery import build
 from utils import ask_openai
-from calendar_tools import handle_calendar_command, get_user_credentials
+from models import db, User, init_db
 
-# Load environment variables
-load_dotenv()
-
-# --- Flask App Setup ---
 app = Flask(__name__)
-app.secret_key = os.getenv("FLASK_SECRET_KEY", "default_secret")
+app.secret_key = os.getenv("FLASK_SECRET_KEY", "your-default-dev-secret")
 
-# ✅ Use DATABASE_URL from env for SQLAlchemy
-DATABASE_URL = os.getenv("DATABASE_URL")
-if not DATABASE_URL:
-    raise ValueError("DATABASE_URL not found in environment")
-app.config["SQLALCHEMY_DATABASE_URI"] = DATABASE_URL
-
-# Setup session
-app.config["SESSION_TYPE"] = "filesystem"
-Session(app)
-
-# Initialize DB
+# PostgreSQL database from Neon
+app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv("DATABASE_URL")
 init_db(app)
 
-# Google OAuth config
+# Load Google OAuth client config from env
 CLIENT_CONFIG_JSON = os.getenv("CLIENT_CONFIG_JSON")
 if not CLIENT_CONFIG_JSON:
-    raise ValueError("CLIENT_CONFIG_JSON is missing in environment")
+    raise RuntimeError("CLIENT_CONFIG_JSON not set in environment.")
 
-client_config = json.loads(CLIENT_CONFIG_JSON)
+CLIENT_SECRETS = json.loads(CLIENT_CONFIG_JSON)
 SCOPES = ["https://www.googleapis.com/auth/calendar"]
 
-# --- Routes ---
+# Routes
 
 @app.route("/")
-def index():
-    if "user_id" in session:
-        return render_template("index.html")
-    return render_template("login.html")
+def home():
+    return render_template_string("""
+        <h2>Google Calendar Assistant</h2>
+        {% if "user_id" in session %}
+            <p>Welcome back! <a href='/logout'>Logout</a></p>
+            <form method="POST" action="/ask">
+                <input name="query" placeholder="e.g. Book meeting tomorrow 2pm" style="width:300px"/>
+                <button>Ask</button>
+            </form>
+        {% else %}
+            <a href="/login">Login with Google</a>
+        {% endif %}
+    """)
+
 
 @app.route("/login")
 def login():
     flow = Flow.from_client_config(
-        client_config,
+        CLIENT_SECRETS,
         scopes=SCOPES,
         redirect_uri=url_for("oauth2callback", _external=True),
     )
-    auth_url, _ = flow.authorization_url(prompt="consent", include_granted_scopes="true")
+    auth_url, state = flow.authorization_url(
+        access_type="offline", include_granted_scopes="true"
+    )
+    session["state"] = state
     return redirect(auth_url)
+
 
 @app.route("/oauth2callback")
 def oauth2callback():
+    state = session.get("state")
+    if not state:
+        return "Missing OAuth state", 400
+
     flow = Flow.from_client_config(
-        client_config,
+        CLIENT_SECRETS,
         scopes=SCOPES,
         redirect_uri=url_for("oauth2callback", _external=True),
+        state=state,
     )
     flow.fetch_token(authorization_response=request.url)
-
     credentials = flow.credentials
-    user_info_service = build("oauth2", "v2", credentials=credentials)
-    user_info = user_info_service.userinfo().get().execute()
 
-    # Store credentials and user info in DB
-    user = store_user_credentials(
-        email=user_info["email"],
-        name=user_info.get("name"),
-        credentials=credentials
-    )
+    # Get user info from calendar API
+    service = build("calendar", "v3", credentials=credentials)
+    profile = service.settings().get(setting="user").execute()
+    email = profile.get("value")
+
+    if not email:
+        return "Could not get email from calendar API.", 500
+
+    user = User.query.filter_by(email=email).first()
+    if not user:
+        user = User(email=email, credentials_json=json.dumps(credentials.to_json()))
+        db.session.add(user)
+    else:
+        user.credentials_json = json.dumps(credentials.to_json())
+    db.session.commit()
+
     session["user_id"] = user.id
-    return redirect(url_for("index"))
+    return redirect(url_for("home"))
+
+
+@app.route("/ask", methods=["POST"])
+def ask():
+    user_id = session.get("user_id")
+    if not user_id:
+        return redirect(url_for("login"))
+
+    query = request.form.get("query")
+    user = db.session.get(User, user_id)
+    if not user:
+        return "User not found", 400
+
+    creds = get_user_credentials(user)
+    response = ask_openai(query, creds)
+    return render_template_string("""
+        <p><strong>You asked:</strong> {{query}}</p>
+        <p><strong>Assistant:</strong> {{response}}</p>
+        <a href="/">Go back</a>
+    """, query=query, response=response)
+
 
 @app.route("/logout")
 def logout():
     session.clear()
-    return redirect(url_for("index"))
+    return redirect(url_for("home"))
 
-@app.route("/ask", methods=["POST"])
-def ask():
-    if "user_id" not in session:
-        return {"error": "Unauthorized"}, 401
 
-    user = db.session.get(User, session["user_id"])
-    if not user:
-        return {"error": "User not found"}, 404
-
-    user_credentials = get_user_credentials(user)
-    if not user_credentials:
-        return {"error": "No credentials found"}, 400
-
-    query = request.json.get("query", "")
-    response = ask_openai(query, tools=[handle_calendar_command], user_credentials=user_credentials)
-    return {"response": response}
-
-# --- Entry Point ---
 if __name__ == "__main__":
     app.run(debug=True)
