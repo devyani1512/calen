@@ -1,12 +1,69 @@
 <!DOCTYPE html>
 <html>
-    <head>
-         <title>Calendar Assistant</title>
-        </head>
-   <body>
-    <h1> Hey there</h1>
-    <form method="POST" action="/chat">
-        <input name="message" placeholder="Ask somthing" style="width:300px;"/>
-    </form>
-   </body>
+  <head>
+    <title>Calendar Assistant</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        background-color: #f0f2f5;
+        padding: 30px;
+      }
+      .container {
+        max-width: 600px;
+        background: white;
+        padding: 30px;
+        margin: auto;
+        border-radius: 10px;
+        box-shadow: 0 0 20px rgba(0,0,0,0.1);
+      }
+      h1 {
+        text-align: center;
+        margin-bottom: 20px;
+      }
+      textarea {
+        width: 100%;
+        height: 100px;
+        padding: 10px;
+        font-size: 1rem;
+        margin-bottom: 10px;
+        border-radius: 5px;
+        border: 1px solid #ccc;
+      }
+      input[type="submit"] {
+        background-color: #007bff;
+        color: white;
+        padding: 10px 20px;
+        font-size: 1rem;
+        border: none;
+        border-radius: 5px;
+        cursor: pointer;
+      }
+      input[type="submit"]:hover {
+        background-color: #0056b3;
+      }
+      .response {
+        margin-top: 20px;
+        background-color: #f8f9fa;
+        padding: 15px;
+        border-left: 4px solid #007bff;
+        border-radius: 5px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>📅 Calendar Assistant</h1>
+      <form method="POST">
+        <textarea name="message" placeholder="Ask me anything about your schedule..."></textarea><br>
+        <input type="submit" value="Ask">
+      </form>
+
+      {% if response %}
+        <div class="response">
+          <strong>Assistant:</strong> {{ response }}
+        </div>
+      {% endif %}
+    </div>
+  </body>
 </html>
+
