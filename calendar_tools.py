@@ -6,12 +6,10 @@ from datetime import datetime, timedelta
 from googleapiclient.discovery import build
 from google.oauth2.credentials import Credentials
 
-
 # Get Google Calendar service
 def get_calendar_service(user_info: dict):
     creds = Credentials.from_authorized_user_info(user_info, scopes=["https://www.googleapis.com/auth/calendar"])
     return build("calendar", "v3", credentials=creds)
-
 
 # Book an event using natural language input
 def book_event_natural(user_info: dict, description: str):
@@ -29,9 +27,8 @@ def book_event_natural(user_info: dict, description: str):
 
     # Default duration = 1 hour
     duration = timedelta(hours=1)
-
-    # Simple rules to guess duration
     desc_lower = description.lower()
+
     if "30 minutes" in desc_lower or "half an hour" in desc_lower:
         duration = timedelta(minutes=30)
     elif "15 minutes" in desc_lower or "quarter" in desc_lower:
@@ -43,8 +40,7 @@ def book_event_natural(user_info: dict, description: str):
 
     start = event_time
     end = start + duration
-
-    timezone = 'Asia/Kolkata'  # Adjust to your own timezone if needed
+    timezone = 'Asia/Kolkata'
 
     event = {
         "summary": "Event",
@@ -63,7 +59,6 @@ def book_event_natural(user_info: dict, description: str):
     except Exception as e:
         return {"success": False, "message": f"❌ Failed to create event: {str(e)}"}
 
-
 # Get schedule for a specific day
 def check_schedule_day(user_info: dict, day: str):
     parsed_day = dateparser.parse(day, settings={'PREFER_DATES_FROM': 'future'})
@@ -72,9 +67,9 @@ def check_schedule_day(user_info: dict, day: str):
 
     start = datetime.combine(parsed_day.date(), datetime.min.time())
     end = start + timedelta(days=1)
-
     timezone = 'Asia/Kolkata'
     service = get_calendar_service(user_info)
+
     try:
         events = service.events().list(
             calendarId='primary',
@@ -97,8 +92,7 @@ def check_schedule_day(user_info: dict, day: str):
     except Exception as e:
         return {"success": False, "message": f"❌ Failed to fetch schedule: {str(e)}"}
 
-
-# Check free slots on a given day (between 9am–6pm)
+# Check free slots on a given day
 def find_free_slots(user_info: dict, day: str):
     parsed_day = dateparser.parse(day, settings={'PREFER_DATES_FROM': 'future'})
     if not parsed_day:
@@ -141,3 +135,16 @@ def find_free_slots(user_info: dict, day: str):
         return {"success": True, "message": slot_msg}
     except Exception as e:
         return {"success": False, "message": f"❌ Failed to find free slots: {str(e)}"}
+
+# ✅ Add this to fix your import error!
+def handle_calendar_command(command: str, user_info: dict):
+    command_lower = command.lower()
+
+    if "schedule" in command_lower or "what do i have" in command_lower:
+        return check_schedule_day(user_info, command)
+    elif "free" in command_lower or "available" in command_lower:
+        return find_free_slots(user_info, command)
+    elif "book" in command_lower or "add event" in command_lower or "schedule a meeting" in command_lower:
+        return book_event_natural(user_info, command)
+    else:
+        return {"success": False, "message": "🤖 Sorry, I couldn't understand the calendar command."}
