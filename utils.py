@@ -1,22 +1,23 @@
 from openai import OpenAI
 import os
+import json
 from calendar_tools import handle_calendar_command
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-def ask_openai(query, creds):
+def ask_openai(query: str, creds):
     tools = [
         {
             "type": "function",
             "function": {
                 "name": "handle_calendar_command",
-                "description": "Handle calendar queries like availability, booking, cancelation",
+                "description": "Handles natural language calendar requests (book, cancel, check availability).",
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "user_input": {
                             "type": "string",
-                            "description": "The user's natural language request"
+                            "description": "The natural language request (e.g., 'Book meeting tomorrow at 3pm called Team Sync')"
                         }
                     },
                     "required": ["user_input"]
@@ -34,29 +35,32 @@ def ask_openai(query, creds):
         tool_choice="auto"
     )
 
-    response_message = response.choices[0].message
+    choice = response.choices[0]
+    tool_calls = choice.message.tool_calls
 
-    if response_message.tool_calls:
-        tool_call = response_message.tool_calls[0]
-        function_name = tool_call.function.name
-        arguments = eval(tool_call.function.arguments)  # parse JSON string to dict
-        if function_name == "handle_calendar_command":
-            tool_result = handle_calendar_command(arguments["user_input"], creds)
-            # Return original message + tool result
-            messages.append(response_message)
-            messages.append({
+    if tool_calls:
+        call = tool_calls[0]
+        arguments = json.loads(call.function.arguments)
+        result = handle_calendar_command(arguments["user_input"], creds)
+
+        messages += [
+            choice.message,
+            {
                 "role": "tool",
-                "tool_call_id": tool_call.id,
-                "name": function_name,
-                "content": tool_result
-            })
+                "tool_call_id": call.id,
+                "name": call.function.name,
+                "content": result
+            }
+        ]
 
-            final_response = client.chat.completions.create(
-                model="gpt-4o",
-                messages=messages
-            )
-            return final_response.choices[0].message.content
-    else:
-        return response_message.content
+        followup = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=messages
+        )
+
+        return followup.choices[0].message.content
+
+    return choice.message.content
+
 
 
