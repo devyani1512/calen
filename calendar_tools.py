@@ -172,70 +172,66 @@ def handle_calendar_command(user_input: str, creds):
     now = datetime.utcnow().isoformat() + "Z"
 
     try:
+        lc_input = user_input.lower()
+
         # Booking intent
-        if "book" in user_input.lower() or "schedule" in user_input.lower():
+        if any(keyword in lc_input for keyword in ["book", "schedule", "add", "create", "set up"]):
             event = create_event_from_input(user_input)
             if not event:
                 return "❌ I couldn't understand the date/time for the event."
+            inserted = service.events().insert(calendarId='primary', body=event).execute()
+            return f"✅ Event booked: **{inserted.get('summary')}** at {inserted['start']['dateTime']} UTC"
 
-            inserted_event = service.events().insert(calendarId='primary', body=event).execute()
-            return f"✅ Event booked: {inserted_event.get('summary')} on {inserted_event['start']['dateTime']}"
-
-        # Cancelation intent
-        elif "cancel" in user_input.lower() or "delete" in user_input.lower():
-            events_result = service.events().list(
+        # Cancel intent
+        elif any(keyword in lc_input for keyword in ["cancel", "delete", "remove"]):
+            events = service.events().list(
                 calendarId='primary',
                 timeMin=now,
                 maxResults=10,
                 singleEvents=True,
                 orderBy='startTime'
-            ).execute()
-            events = events_result.get('items', [])
+            ).execute().get("items", [])
 
             for event in events:
-                if event['summary'].lower() in user_input.lower():
+                if event['summary'].lower() in lc_input:
                     service.events().delete(calendarId='primary', eventId=event['id']).execute()
                     return f"🗑️ Event '{event['summary']}' canceled."
-            return "❌ I couldn't find a matching event to cancel."
+            return "❌ Couldn't find a matching event to cancel."
 
         # Availability intent
-        elif "free" in user_input.lower() or "available" in user_input.lower() or "busy" in user_input.lower():
+        elif any(word in lc_input for word in ["free", "available", "busy"]):
             time_min = datetime.utcnow()
             time_max = time_min + timedelta(days=1)
-            timezone = 'UTC'
 
             body = {
                 "timeMin": time_min.isoformat() + "Z",
                 "timeMax": time_max.isoformat() + "Z",
-                "timeZone": timezone,
+                "timeZone": "UTC",
                 "items": [{"id": "primary"}],
             }
 
-            freebusy = service.freebusy().query(body=body).execute()
-            busy_times = freebusy['calendars']['primary']['busy']
+            fb = service.freebusy().query(body=body).execute()
+            busy_slots = fb["calendars"]["primary"]["busy"]
 
-            if not busy_times:
+            if not busy_slots:
                 return "🟢 You're free all day today!"
-            else:
-                busy_str = "\n".join(
-                    f"- {b['start']} to {b['end']}" for b in busy_times
-                )
-                return f"🟡 You're busy at:\n{busy_str}"
+            return "🟡 You're busy at:\n" + "\n".join(
+                f"- {slot['start']} to {slot['end']}" for slot in busy_slots
+            )
 
-        else:
-            return "🤖 I understood your message but couldn’t match it to a calendar action like booking, canceling, or checking availability."
+        return "🤖 I understood your message but couldn't match it to a calendar action like booking, canceling, or checking availability."
 
-    except HttpError as error:
-        return f"❌ Google Calendar API error: {error}"
+    except HttpError as e:
+        return f"❌ Google Calendar API error: {e}"
+
 
 def create_event_from_input(user_input: str):
-    # Use dateparser to flexibly interpret natural date/time
     dt = dateparser.parse(user_input, settings={"PREFER_DATES_FROM": "future"})
     if not dt:
         return None
 
     start = dt.isoformat()
-    end = (dt + timedelta(hours=1)).isoformat()  # default 1-hour meeting
+    end = (dt + timedelta(hours=1)).isoformat()
     summary = extract_summary(user_input)
 
     return {
@@ -245,8 +241,8 @@ def create_event_from_input(user_input: str):
     }
 
 def extract_summary(text: str):
-    # Basic heuristic to extract title from input
-    parts = text.split("called") if "called" in text else text.split("about")
-    if len(parts) > 1:
-        return parts[1].strip().capitalize()
+    # Enhanced extraction
+    for marker in ["called", "about", "titled", "named"]:
+        if marker in text:
+            return text.split(marker)[-1].strip().capitalize()
     return "Meeting"
