@@ -50,7 +50,7 @@
 from flask import Flask, redirect, session, url_for, request, render_template
 from auth import oauth_login, oauth_callback
 from models import db, User
-from utils import ask_openai
+from utils import ask_openai, handle_user_query
 from dotenv import load_dotenv
 import os
 
