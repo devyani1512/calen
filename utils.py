@@ -1,14 +1,15 @@
 import os
+import json
 from openai import OpenAI
 from calendar_tools import handle_calendar_command
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-def ask_openai(message, session_id=None):
+def ask_openai(message, session_id=None, user_id=None):
     try:
         system_prompt = (
             "You are a helpful assistant that helps users manage their Google Calendar. "
-            "You MUST always respond in JSON format using one of the tools if it's about booking or checking events. "
+            "You MUST always respond in JSON format using the tool if it's about booking or checking events. "
             "If it's a casual message, respond normally."
         )
 
@@ -24,16 +25,20 @@ def ask_openai(message, session_id=None):
                             "user_input": {
                                 "type": "string",
                                 "description": "The user's original natural language request",
+                            },
+                            "user_id": {
+                                "type": "string",
+                                "description": "The ID of the user (used to fetch credentials)",
                             }
                         },
-                        "required": ["user_input"],
+                        "required": ["user_input", "user_id"],
                     },
                 },
             }
         ]
 
         chat_response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
+            model="gpt-4o",  # or gpt-3.5-turbo
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": message}
@@ -46,12 +51,15 @@ def ask_openai(message, session_id=None):
 
         if response_message.tool_calls:
             tool_call = response_message.tool_calls[0]
-            if tool_call.function.name == "handle_calendar_command":
-                user_input_arg = eval(tool_call.function.arguments)["user_input"]
-                return handle_calendar_command(user_input_arg)
+            args = json.loads(tool_call.function.arguments)
+            return handle_calendar_command(
+                user_input=args["user_input"],
+                user_id=args["user_id"]
+            )
         else:
             return response_message.content
 
     except Exception as e:
         return f"❌ Assistant error: {str(e)}"
+
 
