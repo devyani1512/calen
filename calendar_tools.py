@@ -157,61 +157,59 @@
 
 # calendar_tool.py
 # utils.py
-import os
-import json
-from openai import OpenAI
-from calendar_tools import handle_calendar_command
-from models import get_user_credentials  # Assumes this is in models.py or similar
+# calendar_tools.py
+import pytz
+import dateparser
+from datetime import datetime, timedelta
+from googleapiclient.discovery import build
 
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-def ask_openai(message, user_id):
+def handle_calendar_command(user_input, credentials):
     try:
-        system_prompt = (
-            "You are a helpful assistant that helps users manage their Google Calendar. "
-            "If the user message is about booking/checking/cancelling events, call the calendar tool."
-        )
+        service = build("calendar", "v3", credentials=credentials)
+        parsed_date = dateparser.parse(user_input, settings={"PREFER_DATES_FROM": "future"})
 
-        tools = [
-            {
-                "type": "function",
-                "function": {
-                    "name": "handle_calendar_command",
-                    "description": "Book/check Google Calendar based on natural language",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "user_input": {
-                                "type": "string",
-                                "description": "The user's original message",
-                            }
-                        },
-                        "required": ["user_input"],
-                    },
-                },
+        if any(word in user_input.lower() for word in ["book", "schedule", "add", "create"]):
+            start_time = dateparser.parse(user_input, settings={"PREFER_DATES_FROM": "future"})
+            if not start_time:
+                return "Could not understand the event time."
+            end_time = start_time + timedelta(hours=1)
+
+            event = {
+                'summary': 'Event',
+                'start': {'dateTime': start_time.isoformat(), 'timeZone': 'Asia/Kolkata'},
+                'end': {'dateTime': end_time.isoformat(), 'timeZone': 'Asia/Kolkata'}
             }
-        ]
+            service.events().insert(calendarId='primary', body=event).execute()
+            return f"✅ Event booked from {start_time.strftime('%I:%M %p')} to {end_time.strftime('%I:%M %p')}"
 
-        chat_response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": message}
-            ],
-            tools=tools,
-            tool_choice="auto"
-        )
+        elif any(word in user_input.lower() for word in ["show", "check", "view", "see"]):
+            now = datetime.utcnow().isoformat() + 'Z'
+            events_result = service.events().list(
+                calendarId='primary', timeMin=now, maxResults=5, singleEvents=True, orderBy='startTime'
+            ).execute()
+            events = events_result.get('items', [])
+            if not events:
+                return "📭 No upcoming events found."
+            reply = "📅 Upcoming events:\n"
+            for event in events:
+                start = event['start'].get('dateTime', event['start'].get('date'))
+                reply += f"- {event['summary']} at {start}\n"
+            return reply
 
-        response_message = chat_response.choices[0].message
+        elif any(word in user_input.lower() for word in ["cancel", "delete"]):
+            events_result = service.events().list(
+                calendarId='primary', maxResults=5, singleEvents=True, orderBy='startTime'
+            ).execute()
+            events = events_result.get('items', [])
+            if not events:
+                return "No events to delete."
+            first_event = events[0]
+            service.events().delete(calendarId='primary', eventId=first_event['id']).execute()
+            return f"🗑️ Deleted event: {first_event['summary']}"
 
-        if response_message.tool_calls:
-            tool_call = response_message.tool_calls[0]
-            if tool_call.function.name == "handle_calendar_command":
-                user_input_arg = json.loads(tool_call.function.arguments)["user_input"]
-                creds = get_user_credentials(user_id)
-                return handle_calendar_command(user_input_arg, creds)
         else:
-            return response_message.content
+            return "Sorry, I couldn't understand your calendar command."
 
     except Exception as e:
-        return f"❌ Assistant error: {str(e)}"
+        return f"❌ Calendar error: {str(e)}"
