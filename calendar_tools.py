@@ -190,7 +190,7 @@ def ask_openai(message, session_id=None):
         ]
 
         chat_response = client.chat.completions.create(
-            model="gpt-4o",
+            model="gpt-3.5-turbo",
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": message}
