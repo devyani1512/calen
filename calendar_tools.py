@@ -158,58 +158,76 @@
 # calendar_tool.py
 # utils.py
 # calendar_tools.py
+import os
+import json
 import pytz
-import dateparser
 from datetime import datetime, timedelta
+
+import dateparser
 from googleapiclient.discovery import build
+from google.oauth2.credentials import Credentials
+from models import db, User
 
+def get_user_credentials(user_id):
+    user = db.session.get(User, user_id)
+    if user and user.credentials_json:
+        credentials_info = json.loads(user.credentials_json)
+        return Credentials.from_authorized_user_info(
+            credentials_info, scopes=["https://www.googleapis.com/auth/calendar"]
+        )
+    return None
 
-def handle_calendar_command(user_input, credentials):
+def handle_calendar_command(user_input, user_id):
     try:
-        service = build("calendar", "v3", credentials=credentials)
-        parsed_date = dateparser.parse(user_input, settings={"PREFER_DATES_FROM": "future"})
+        creds = get_user_credentials(user_id)
+        if not creds:
+            return {"message": "❌ User credentials not found. Please log in via Google OAuth.", "success": False}
 
-        if any(word in user_input.lower() for word in ["book", "schedule", "add", "create"]):
-            start_time = dateparser.parse(user_input, settings={"PREFER_DATES_FROM": "future"})
-            if not start_time:
-                return "Could not understand the event time."
-            end_time = start_time + timedelta(hours=1)
+        service = build("calendar", "v3", credentials=creds)
+        parsed = parse_input(user_input)
 
-            event = {
-                'summary': 'Event',
-                'start': {'dateTime': start_time.isoformat(), 'timeZone': 'Asia/Kolkata'},
-                'end': {'dateTime': end_time.isoformat(), 'timeZone': 'Asia/Kolkata'}
-            }
-            service.events().insert(calendarId='primary', body=event).execute()
-            return f"✅ Event booked from {start_time.strftime('%I:%M %p')} to {end_time.strftime('%I:%M %p')}"
+        if not parsed["start"] or not parsed["end"]:
+            return {"message": "❌ Couldn't understand the date/time. Try something like 'meeting tomorrow at 3pm for 1 hour'", "success": False}
 
-        elif any(word in user_input.lower() for word in ["show", "check", "view", "see"]):
-            now = datetime.utcnow().isoformat() + 'Z'
-            events_result = service.events().list(
-                calendarId='primary', timeMin=now, maxResults=5, singleEvents=True, orderBy='startTime'
-            ).execute()
-            events = events_result.get('items', [])
-            if not events:
-                return "📭 No upcoming events found."
-            reply = "📅 Upcoming events:\n"
-            for event in events:
-                start = event['start'].get('dateTime', event['start'].get('date'))
-                reply += f"- {event['summary']} at {start}\n"
-            return reply
+        event = {
+            "summary": parsed["summary"] or "Untitled Event",
+            "start": {"dateTime": parsed["start"], "timeZone": parsed["timezone"]},
+            "end": {"dateTime": parsed["end"], "timeZone": parsed["timezone"]},
+        }
 
-        elif any(word in user_input.lower() for word in ["cancel", "delete"]):
-            events_result = service.events().list(
-                calendarId='primary', maxResults=5, singleEvents=True, orderBy='startTime'
-            ).execute()
-            events = events_result.get('items', [])
-            if not events:
-                return "No events to delete."
-            first_event = events[0]
-            service.events().delete(calendarId='primary', eventId=first_event['id']).execute()
-            return f"🗑️ Deleted event: {first_event['summary']}"
+        service.events().insert(calendarId="primary", body=event).execute()
 
-        else:
-            return "Sorry, I couldn't understand your calendar command."
+        return {
+            "message": f"✅ Event '{event['summary']}' booked from {parsed['start']} to {parsed['end']}",
+            "success": True,
+        }
 
     except Exception as e:
-        return f"❌ Calendar error: {str(e)}"
+        return {"message": f"❌ Error: {str(e)}", "success": False}
+
+def parse_input(text):
+    now = datetime.now()
+    timezone = str(datetime.now().astimezone().tzinfo)
+
+    # Parse full datetime span
+    dt = dateparser.search.search_dates(text, settings={"RELATIVE_BASE": now})
+    if not dt or len(dt) < 1:
+        return {"start": None, "end": None, "summary": None, "timezone": timezone}
+
+    times = [t[1] for t in dt]
+    times.sort()
+    start_time = times[0]
+    end_time = times[1] if len(times) > 1 else start_time + timedelta(hours=1)
+
+    summary = None
+    if '"' in text:
+        summary = text.split('"')[1]
+    elif "'" in text:
+        summary = text.split("'")[1]
+
+    return {
+        "start": start_time.isoformat(),
+        "end": end_time.isoformat(),
+        "summary": summary,
+        "timezone": timezone,
+    }
