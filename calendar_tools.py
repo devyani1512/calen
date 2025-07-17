@@ -155,60 +155,59 @@
 # calendar_tool.py
 # calendar_tool.py
 
-import json
 import os
-from datetime import datetime, timedelta
-import pytz
-import dateparser
-from google.oauth2.credentials import Credentials
-from googleapiclient.discovery import build
+from openai import OpenAI
+from calendar_tool import handle_calendar_command
 
-def get_calendar_service(user_token_info: dict):
-    credentials = Credentials.from_authorized_user_info(user_token_info)
-    return build("calendar", "v3", credentials=credentials)
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-def parse_time(text, ref=None):
-    dt = dateparser.parse(text, settings={"RELATIVE_BASE": ref or datetime.now()})
-    if not dt:
-        raise ValueError(f"Could not parse time from input: {text}")
-    return dt.astimezone(pytz.utc)
+def ask_openai(message, session_id=None):
+    try:
+        system_prompt = (
+            "You are a helpful assistant that helps users manage their Google Calendar. "
+            "You MUST always respond in JSON format using one of the tools if it's about booking or checking events. "
+            "If it's a casual message, respond normally."
+        )
 
-def check_availability(user_token_info: dict, time_range: str):
-    start = parse_time(time_range)
-    end = start + timedelta(hours=1)
+        tools = [
+            {
+                "type": "function",
+                "function": {
+                    "name": "handle_calendar_command",
+                    "description": "Book or check Google Calendar based on natural language input",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "user_input": {
+                                "type": "string",
+                                "description": "The user's original natural language request",
+                            }
+                        },
+                        "required": ["user_input"],
+                    },
+                },
+            }
+        ]
 
-    service = get_calendar_service(user_token_info)
-    events_result = service.events().list(
-        calendarId="primary",
-        timeMin=start.isoformat(),
-        timeMax=end.isoformat(),
-        singleEvents=True,
-        orderBy="startTime"
-    ).execute()
+        chat_response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": message}
+            ],
+            tools=tools,
+            tool_choice="auto"
+        )
 
-    events = events_result.get("items", [])
-    return "available" if not events else "busy"
+        response_message = chat_response.choices[0].message
 
-def book_event(user_token_info: dict, summary: str, time_text: str):
-    start = parse_time(time_text)
-    end = start + timedelta(hours=1)
+        if response_message.tool_calls:
+            tool_call = response_message.tool_calls[0]
+            if tool_call.function.name == "handle_calendar_command":
+                user_input_arg = eval(tool_call.function.arguments)["user_input"]
+                return handle_calendar_command(user_input_arg)
+        else:
+            return response_message.content
 
-    service = get_calendar_service(user_token_info)
-    event = {
-        "summary": summary,
-        "start": {"dateTime": start.isoformat(), "timeZone": "UTC"},
-        "end": {"dateTime": end.isoformat(), "timeZone": "UTC"},
-    }
-    created_event = service.events().insert(calendarId="primary", body=event).execute()
-    return f"Event '{created_event['summary']}' booked on {created_event['start']['dateTime']}."
-
-def handle_calendar_command(user_token_info: dict, user_input: str):
-    if "available" in user_input:
-        return check_availability(user_token_info, user_input)
-    elif "book" in user_input or "schedule" in user_input:
-        # Very naive extraction logic. Customize this later.
-        return book_event(user_token_info, summary="Meeting", time_text=user_input)
-    else:
-        return "Sorry, I couldn't understand your request."
-
-
+    except Exception as e:
+        return f"❌ Assistant error: {str(e)}"
