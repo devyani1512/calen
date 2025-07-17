@@ -4,8 +4,7 @@ import json
 from google_auth_oauthlib.flow import Flow
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
-from db import db
-from models import User
+from models import db, User  # ✅ updated import
 
 def oauth_login():
     client_config = json.loads(os.getenv("CLIENT_CONFIG_JSON"))
@@ -13,18 +12,17 @@ def oauth_login():
     flow = Flow.from_client_config(
         client_config,
         scopes=["https://www.googleapis.com/auth/calendar"],
-        redirect_uri="https://calen-o3rg.onrender.com/oauth2callback"  # update if you deploy
+        redirect_uri="https://calen-o3rg.onrender.com/oauth2callback"
     )
 
     auth_url, state = flow.authorization_url(
-        access_type='offline',             # ensures refresh_token is returned
-        prompt='consent',                  # forces re-consent each time
-        include_granted_scopes='true'      # optional: allow incremental auth
+        access_type='offline',
+        prompt='consent',
+        include_granted_scopes='true'
     )
 
     session["state"] = state
     return redirect(auth_url)
-
 
 def oauth_callback():
     if "state" not in session:
@@ -52,7 +50,7 @@ def oauth_callback():
 
     print("🔐 Saving user info:", json.dumps(user_info, indent=2))
 
-    user = User(auth_info=json.dumps(user_info))
+    user = User(credentials_json=json.dumps(user_info))
     db.session.add(user)
     db.session.commit()
     session["user_id"] = user.id
