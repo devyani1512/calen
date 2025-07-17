@@ -156,58 +156,69 @@
 # calendar_tool.py
 
 import os
-from openai import OpenAI
-from calendar_tool import handle_calendar_command
+import json
+from google.oauth2.credentials import Credentials
+from googleapiclient.discovery import build
+from datetime import datetime, timedelta
+import dateparser
+from flask import session
 
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+def get_calendar_service():
+    user_info = session.get("user_credentials")
+    if not user_info:
+        raise Exception("User not logged in or missing credentials in session.")
 
-def ask_openai(message, session_id=None):
+    creds = Credentials.from_authorized_user_info(user_info, scopes=[
+        "https://www.googleapis.com/auth/calendar"
+    ])
+    return build("calendar", "v3", credentials=creds)
+
+def handle_calendar_command(user_input: str) -> str:
     try:
-        system_prompt = (
-            "You are a helpful assistant that helps users manage their Google Calendar. "
-            "You MUST always respond in JSON format using one of the tools if it's about booking or checking events. "
-            "If it's a casual message, respond normally."
-        )
-
-        tools = [
-            {
-                "type": "function",
-                "function": {
-                    "name": "handle_calendar_command",
-                    "description": "Book or check Google Calendar based on natural language input",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "user_input": {
-                                "type": "string",
-                                "description": "The user's original natural language request",
-                            }
-                        },
-                        "required": ["user_input"],
-                    },
-                },
-            }
-        ]
-
-        chat_response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": message}
-            ],
-            tools=tools,
-            tool_choice="auto"
-        )
-
-        response_message = chat_response.choices[0].message
-
-        if response_message.tool_calls:
-            tool_call = response_message.tool_calls[0]
-            if tool_call.function.name == "handle_calendar_command":
-                user_input_arg = eval(tool_call.function.arguments)["user_input"]
-                return handle_calendar_command(user_input_arg)
+        if "book" in user_input.lower() or "meeting" in user_input.lower():
+            return book_event_natural(user_input)
+        elif "availability" in user_input.lower() or "free" in user_input.lower():
+            return check_availability_natural(user_input)
         else:
-            return response_message.content
-
+            return "Sorry, I couldn't understand the calendar command."
     except Exception as e:
-        return f"❌ Assistant error: {str(e)}"
+        return f"❌ Calendar error: {str(e)}"
+
+def book_event_natural(user_input: str) -> str:
+    service = get_calendar_service()
+
+    # basic date/time parsing
+    start_time = dateparser.parse(user_input)
+    if not start_time:
+        return "❌ Could not understand date/time."
+
+    end_time = start_time + timedelta(hours=1)
+
+    event = {
+        "summary": "Auto Event",
+        "description": f"Scheduled from natural input: {user_input}",
+        "start": {"dateTime": start_time.isoformat(), "timeZone": "Asia/Kolkata"},
+        "end": {"dateTime": end_time.isoformat(), "timeZone": "Asia/Kolkata"},
+    }
+
+    service.events().insert(calendarId="primary", body=event).execute()
+    return f"✅ Event booked from {start_time.strftime('%I:%M %p')} to {end_time.strftime('%I:%M %p')}"
+
+def check_availability_natural(user_input: str) -> str:
+    service = get_calendar_service()
+    now = datetime.utcnow().isoformat() + "Z"
+    events_result = service.events().list(
+        calendarId="primary", timeMin=now, maxResults=10, singleEvents=True, orderBy="startTime"
+    ).execute()
+    events = events_result.get("items", [])
+
+    if not events:
+        return "✅ You have no upcoming events."
+
+    msg = "📅 Your upcoming events:\n"
+    for event in events:
+        start = event["start"].get("dateTime", event["start"].get("date"))
+        msg += f"- {event['summary']} at {start}\n"
+
+    return msg
+
