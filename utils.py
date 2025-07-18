@@ -17,7 +17,7 @@ def ask_openai(query: str, creds):
                     "properties": {
                         "user_input": {
                             "type": "string",
-                            "description": "The natural language request (e.g., 'Book meeting tomorrow at 3pm called Team Sync')"
+                            "description": "The user's natural language calendar query, e.g. 'Schedule meeting at 4pm tomorrow with Rahul'."
                         }
                     },
                     "required": ["user_input"]
@@ -28,8 +28,9 @@ def ask_openai(query: str, creds):
 
     messages = [{"role": "user", "content": query}]
 
+    # Initial model call
     response = client.chat.completions.create(
-        model="gpt-3.5-turbo",
+        model="gpt-4o",  # Changed to gpt-4o to avoid 403 error
         messages=messages,
         tools=tools,
         tool_choice="auto"
@@ -38,21 +39,28 @@ def ask_openai(query: str, creds):
     choice = response.choices[0]
     tool_calls = choice.message.tool_calls
 
+    # If a tool is called
     if tool_calls:
-        call = tool_calls[0]
-        arguments = json.loads(call.function.arguments)
-        result = handle_calendar_command(arguments["user_input"], creds)
+        tool_messages = [choice.message]
 
-        messages += [
-            choice.message,
-            {
+        for call in tool_calls:
+            args = json.loads(call.function.arguments)
+
+            if call.function.name == "handle_calendar_command":
+                result = handle_calendar_command(args["user_input"], creds)
+            else:
+                result = f"Tool `{call.function.name}` not recognized."
+
+            tool_messages.append({
                 "role": "tool",
                 "tool_call_id": call.id,
                 "name": call.function.name,
                 "content": result
-            }
-        ]
+            })
 
+        messages += tool_messages
+
+        # Second model call for follow-up after tool execution
         followup = client.chat.completions.create(
             model="gpt-4o",
             messages=messages
@@ -60,7 +68,9 @@ def ask_openai(query: str, creds):
 
         return followup.choices[0].message.content
 
+    # No tool called, just return direct response
     return choice.message.content
+
 
 
 
