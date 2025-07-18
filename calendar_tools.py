@@ -161,29 +161,31 @@
 import pytz
 import dateparser
 from datetime import datetime, timedelta
+from dateparser.search import search_dates
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
+
 
 def create_service(creds):
     return build("calendar", "v3", credentials=creds)
 
+
 def handle_calendar_command(user_input: str, creds):
     service = create_service(creds)
     now = datetime.utcnow().isoformat() + "Z"
+    lc_input = user_input.lower()
 
     try:
-        lc_input = user_input.lower()
-
         # Booking intent
-        if any(keyword in lc_input for keyword in ["book", "schedule", "add", "create", "set up"]):
+        if any(k in lc_input for k in ["book", "schedule", "add", "create", "set up"]):
             event = create_event_from_input(user_input)
             if not event:
-                return "❌ I couldn't understand the date/time for the event."
+                return "❌ I couldn't understand the date/time for the event. Try including a specific time."
             inserted = service.events().insert(calendarId='primary', body=event).execute()
-            return f"✅ Event booked: **{inserted.get('summary')}** at {inserted['start']['dateTime']} UTC"
+            return f"✅ Event **'{inserted.get('summary')}'** booked at **{inserted['start']['dateTime']} UTC**"
 
         # Cancel intent
-        elif any(keyword in lc_input for keyword in ["cancel", "delete", "remove"]):
+        elif any(k in lc_input for k in ["cancel", "delete", "remove"]):
             events = service.events().list(
                 calendarId='primary',
                 timeMin=now,
@@ -195,8 +197,8 @@ def handle_calendar_command(user_input: str, creds):
             for event in events:
                 if event['summary'].lower() in lc_input:
                     service.events().delete(calendarId='primary', eventId=event['id']).execute()
-                    return f"🗑️ Event '{event['summary']}' canceled."
-            return "❌ Couldn't find a matching event to cancel."
+                    return f"🗑️ Event **'{event['summary']}'** canceled."
+            return "❌ Couldn't find a matching event to cancel in upcoming events."
 
         # Availability intent
         elif any(word in lc_input for word in ["free", "available", "busy"]):
@@ -219,17 +221,19 @@ def handle_calendar_command(user_input: str, creds):
                 f"- {slot['start']} to {slot['end']}" for slot in busy_slots
             )
 
-        return "🤖 I understood your message but couldn't match it to a calendar action like booking, canceling, or checking availability."
+        # Unrecognized intent
+        return "🤖 I understood your message but couldn't match it to booking, canceling, or availability checking."
 
     except HttpError as e:
         return f"❌ Google Calendar API error: {e}"
 
 
 def create_event_from_input(user_input: str):
-    dt = dateparser.parse(user_input, settings={"PREFER_DATES_FROM": "future"})
-    if not dt:
+    found = search_dates(user_input, settings={"PREFER_DATES_FROM": "future"})
+    if not found:
         return None
 
+    dt = found[0][1]
     start = dt.isoformat()
     end = (dt + timedelta(hours=1)).isoformat()
     summary = extract_summary(user_input)
@@ -240,9 +244,17 @@ def create_event_from_input(user_input: str):
         "end": {"dateTime": end, "timeZone": "UTC"},
     }
 
+
 def extract_summary(text: str):
-    # Enhanced extraction
     for marker in ["called", "about", "titled", "named"]:
         if marker in text:
-            return text.split(marker)[-1].strip().capitalize()
+            after = text.split(marker, 1)[-1].strip()
+            return after[:100].capitalize()
+
+    # Fallback: extract meaningful tokens after keywords like "book", etc.
+    tokens = text.split()
+    for i, token in enumerate(tokens):
+        if token.lower() in ["book", "schedule", "add"]:
+            return " ".join(tokens[i+1:i+6]).capitalize()
     return "Meeting"
+
