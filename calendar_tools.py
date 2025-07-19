@@ -230,28 +230,38 @@ def handle_calendar_command(user_input: str, creds):
 
 def create_event_from_input(user_input: str):
     found = search_dates(
-    user_input,
-    languages=["en"],
-    settings={
-        "PREFER_DATES_FROM": "future",
-        "TIMEZONE": "Asia/Kolkata",
-        "RETURN_AS_TIMEZONE_AWARE": True
-    }
-)
+        user_input,
+        languages=["en"],
+        settings={
+            "PREFER_DATES_FROM": "future",
+            "TIMEZONE": "Asia/Kolkata",
+            "RETURN_AS_TIMEZONE_AWARE": True
+        }
+    )
 
-    if not found:
+    if not found or len(found) < 1:
         return None
 
-    dt = found[0][1]
-    start = dt.isoformat()
-    end = (dt + timedelta(hours=1)).isoformat()
+    dt = found[0][1]  # Start time
+
+    # Try to extract an end time (e.g. "from 10am to 11am")
+    if len(found) >= 2:
+        dt_end = found[1][1]
+    else:
+        dt_end = dt + timedelta(hours=1)
+
+    # Convert to UTC for Google Calendar API
+    dt_utc = dt.astimezone(pytz.utc)
+    dt_end_utc = dt_end.astimezone(pytz.utc)
+
     summary = extract_summary(user_input)
 
     return {
         "summary": summary or "Untitled Event",
-        "start": {"dateTime": start, "timeZone": "UTC"},
-        "end": {"dateTime": end, "timeZone": "UTC"},
+        "start": {"dateTime": dt_utc.isoformat(), "timeZone": "UTC"},
+        "end": {"dateTime": dt_end_utc.isoformat(), "timeZone": "UTC"},
     }
+
 
 
 def extract_summary(text: str):
