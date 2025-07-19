@@ -300,203 +300,135 @@
 
 
 
-from google_auth_oauthlib.flow import InstalledAppFlow
-from googleapiclient.discovery import build
-from datetime import datetime, timedelta
+import datetime
 import pytz
 import re
+import dateutil.parser
+from google.auth.transport.requests import Request
+from google_auth_oauthlib.flow import InstalledAppFlow
+from googleapiclient.discovery import build
 
+# If modifying these SCOPES, delete the token.json file
 SCOPES = ['https://www.googleapis.com/auth/calendar']
 
-# Natural language to intent parser
-def parse_user_input(user_input):
-    user_input = user_input.lower()
-    if "cancel" in user_input:
-        return "cancel"
-    elif "book" in user_input or "schedule" in user_input:
-        return "book"
-    elif "availability" in user_input or "available" in user_input:
-        return "check_availability"
-    elif "free slot" in user_input:
-        return "find_free_slots"
-    elif "remind" in user_input:
-        return "set_reminder"
-    elif "schedule for" in user_input or "show my day" in user_input:
-        return "daily_schedule"
+def authenticate_user(creds):
+    if creds and creds.valid:
+        if creds.expired and creds.refresh_token:
+            creds.refresh(Request())
+        return build('calendar', 'v3', credentials=creds)
     else:
-        return "unknown"
+        raise Exception("Invalid or missing Google credentials.")
 
-# Extract datetime and details (simplified)
-def extract_details(user_input):
-    now = datetime.now(pytz.utc)
-    match_time = re.search(r'at (\d{1,2})(:(\d{2}))?\s*(am|pm)?', user_input)
-    match_day = re.search(r'(today|tomorrow)', user_input)
-    hour = 10
-    minute = 0
+def parse_datetime(text):
+    try:
+        return dateutil.parser.parse(text, fuzzy=True)
+    except Exception as e:
+        return None
 
-    if match_time:
-        hour = int(match_time.group(1))
-        minute = int(match_time.group(3)) if match_time.group(3) else 0
-        ampm = match_time.group(4)
-        if ampm == 'pm' and hour < 12:
-            hour += 12
+def check_availability(service, calendar_id='primary', start_time=None, end_time=None):
+    events_result = service.events().list(
+        calendarId=calendar_id,
+        timeMin=start_time.isoformat(),
+        timeMax=end_time.isoformat(),
+        singleEvents=True,
+        orderBy='startTime'
+    ).execute()
+    return events_result.get('items', [])
 
-    if match_day:
-        if match_day.group(1) == 'tomorrow':
-            now += timedelta(days=1)
-
-    event_start = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
-    event_end = event_start + timedelta(hours=1)
-
-    summary = "Meeting"
-    summary_match = re.search(r'with (\w+)', user_input)
-    if summary_match:
-        summary = f"Meeting with {summary_match.group(1).capitalize()}"
-
-    return summary, event_start.isoformat(), event_end.isoformat()
-
-# Book an event
-def book_event(service, summary, start, end):
+def book_event(service, summary, start_time, end_time, attendees=[], reminders=None):
     event = {
         'summary': summary,
-        'start': {'dateTime': start, 'timeZone': 'Asia/Kolkata'},
-        'end': {'dateTime': end, 'timeZone': 'Asia/Kolkata'},
+        'start': {'dateTime': start_time.isoformat(), 'timeZone': 'Asia/Kolkata'},
+        'end': {'dateTime': end_time.isoformat(), 'timeZone': 'Asia/Kolkata'},
     }
+    if attendees:
+        event['attendees'] = [{'email': email} for email in attendees]
+    if reminders:
+        event['reminders'] = {'useDefault': False, 'overrides': reminders}
 
-    events_result = service.events().list(
-        calendarId='primary',
-        timeMin=start,
-        timeMax=end,
-        singleEvents=True
-    ).execute()
+    try:
+        created_event = service.events().insert(calendarId='primary', body=event).execute()
+        return f"✅ Event created: {created_event.get('htmlLink')}"
+    except Exception as e:
+        return f"❌ Failed to create event: {e}"
 
-    if events_result.get('items'):
-        return "Conflict: You already have an event during that time."
+def cancel_event(service, summary, date):
+    date_start = datetime.datetime.combine(date, datetime.time.min).astimezone(pytz.utc)
+    date_end = datetime.datetime.combine(date, datetime.time.max).astimezone(pytz.utc)
+    events = check_availability(service, start_time=date_start, end_time=date_end)
 
-    service.events().insert(calendarId='primary', body=event).execute()
-    return f"Event '{summary}' booked from {start} to {end}."
-
-# Cancel event (based on title)
-def cancel_event(service, user_input):
-    events_result = service.events().list(
-        calendarId='primary',
-        timeMin=datetime.utcnow().isoformat() + 'Z',
-        maxResults=10,
-        singleEvents=True,
-        orderBy='startTime'
-    ).execute()
-
-    events = events_result.get('items', [])
     for event in events:
-        if user_input.lower() in event['summary'].lower():
+        if summary.lower() in event['summary'].lower():
             service.events().delete(calendarId='primary', eventId=event['id']).execute()
-            return f"Event '{event['summary']}' has been canceled."
-    return "No matching event found to cancel."
+            return f"🗑️ Event '{event['summary']}' deleted."
+    return "⚠️ No matching event found to cancel."
 
-# Check availability now
-def check_availability(service):
-    now = datetime.utcnow().isoformat() + 'Z'
-    in_one_hour = (datetime.utcnow() + timedelta(hours=1)).isoformat() + 'Z'
-    events = service.events().list(
-        calendarId='primary',
-        timeMin=now,
-        timeMax=in_one_hour,
-        singleEvents=True
-    ).execute()
-    if events.get('items'):
-        return "You are busy right now."
-    return "You are free now."
+def find_free_slots(service, date, duration_minutes=30):
+    date_start = datetime.datetime.combine(date, datetime.time.min).astimezone(pytz.utc)
+    date_end = datetime.datetime.combine(date, datetime.time.max).astimezone(pytz.utc)
+    events = check_availability(service, start_time=date_start, end_time=date_end)
 
-# Daily schedule
-def check_daily_schedule(service):
-    now = datetime.utcnow()
-    start_of_day = datetime(now.year, now.month, now.day, 0, 0, 0, tzinfo=pytz.utc)
-    end_of_day = start_of_day + timedelta(days=1)
-
-    events = service.events().list(
-        calendarId='primary',
-        timeMin=start_of_day.isoformat(),
-        timeMax=end_of_day.isoformat(),
-        singleEvents=True,
-        orderBy='startTime'
-    ).execute()
-
-    event_list = events.get('items', [])
-    if not event_list:
-        return "You have no events scheduled today."
-    response = "Today's schedule:\n"
-    for event in event_list:
-        start = event['start'].get('dateTime', event['start'].get('date'))
-        response += f"- {event['summary']} at {start}\n"
-    return response
-
-# Find free slots today
-def find_free_slots(service):
-    now = datetime.now(pytz.utc)
-    end_of_day = now.replace(hour=23, minute=59)
-    events = service.events().list(
-        calendarId='primary',
-        timeMin=now.isoformat(),
-        timeMax=end_of_day.isoformat(),
-        singleEvents=True,
-        orderBy='startTime'
-    ).execute()
-    busy_times = [(datetime.fromisoformat(e['start']['dateTime']), datetime.fromisoformat(e['end']['dateTime']))
-                  for e in events.get('items', []) if 'dateTime' in e['start']]
+    busy_times = [(date_start, date_start)]
+    for event in events:
+        start = dateutil.parser.parse(event['start']['dateTime'])
+        end = dateutil.parser.parse(event['end']['dateTime'])
+        busy_times.append((start, end))
+    busy_times.append((date_end, date_end))
+    busy_times.sort()
 
     free_slots = []
-    current = now
-    for start, end in busy_times:
-        if current < start:
-            free_slots.append((current, start))
-        current = max(current, end)
-
-    if current < end_of_day:
-        free_slots.append((current, end_of_day))
+    for i in range(len(busy_times) - 1):
+        gap = (busy_times[i+1][0] - busy_times[i][1]).total_seconds() / 60
+        if gap >= duration_minutes:
+            free_slots.append((busy_times[i][1], busy_times[i+1][0]))
 
     if not free_slots:
-        return "No free slots today."
+        return "No free slots available."
+    return "\n".join([f"{start.strftime('%I:%M %p')} - {end.strftime('%I:%M %p')}" for start, end in free_slots])
 
-    reply = "Free slots today:\n"
-    for s, e in free_slots:
-        reply += f"- {s.strftime('%H:%M')} to {e.strftime('%H:%M')}\n"
-    return reply
-
-# Set reminder (event in calendar)
-def set_reminder(service, user_input):
-    summary, start, end = extract_details(user_input)
-    event = {
-        'summary': summary,
-        'start': {'dateTime': start, 'timeZone': 'Asia/Kolkata'},
-        'end': {'dateTime': end, 'timeZone': 'Asia/Kolkata'},
-        'reminders': {
-            'useDefault': False,
-            'overrides': [
-                {'method': 'popup', 'minutes': 10}
-            ]
-        }
-    }
-    service.events().insert(calendarId='primary', body=event).execute()
-    return f"Reminder set: {summary} at {start}."
-
-# Entry point
 def handle_calendar_command(user_input, creds):
-    service = build('calendar', 'v3', credentials=creds)
-    intent = parse_user_input(user_input)
+    service = authenticate_user(creds)
 
-    if intent == "book":
-        summary, start, end = extract_details(user_input)
-        return book_event(service, summary, start, end)
-    elif intent == "cancel":
-        return cancel_event(service, user_input)
-    elif intent == "check_availability":
-        return check_availability(service)
-    elif intent == "find_free_slots":
-        return find_free_slots(service)
-    elif intent == "set_reminder":
-        return set_reminder(service, user_input)
-    elif intent == "daily_schedule":
-        return check_daily_schedule(service)
-    else:
-        return "Sorry, I couldn't understand your request."
+    # Cancel
+    cancel_match = re.search(r'(cancel|delete)\s+(?P<summary>.+?)\s+on\s+(?P<date>.+)', user_input, re.IGNORECASE)
+    if cancel_match:
+        summary = cancel_match.group('summary')
+        date_text = cancel_match.group('date')
+        date = parse_datetime(date_text).date()
+        return cancel_event(service, summary, date)
+
+    # Book
+    book_match = re.search(r'(schedule|book|add)\s+(?P<summary>.+?)\s+(on\s+)?(?P<date_time>.+)', user_input, re.IGNORECASE)
+    if book_match:
+        summary = book_match.group('summary')
+        date_time_text = book_match.group('date_time')
+        start_time = parse_datetime(date_time_text)
+        if not start_time:
+            return "❌ Could not understand the time for booking."
+        end_time = start_time + datetime.timedelta(hours=1)
+        return book_event(service, summary, start_time, end_time)
+
+    # Availability Check
+    avail_match = re.search(r'(available|free|busy)\s+(on\s+)?(?P<date>.+)', user_input, re.IGNORECASE)
+    if avail_match:
+        date = parse_datetime(avail_match.group('date'))
+        if not date:
+            return "❌ Could not understand the date for availability."
+        start_time = datetime.datetime.combine(date.date(), datetime.time.min).astimezone(pytz.utc)
+        end_time = datetime.datetime.combine(date.date(), datetime.time.max).astimezone(pytz.utc)
+        events = check_availability(service, start_time=start_time, end_time=end_time)
+        if not events:
+            return "✅ You are free all day."
+        return "📅 You have events:\n" + "\n".join(
+            [f"- {e['summary']} at {e['start'].get('dateTime', e['start'].get('date'))}" for e in events]
+        )
+
+    # Free slots
+    free_match = re.search(r'(find|get)\s+free\s+slots\s+(on\s+)?(?P<date>.+)', user_input, re.IGNORECASE)
+    if free_match:
+        date = parse_datetime(free_match.group('date')).date()
+        return find_free_slots(service, date)
+
+    return "🤖 I couldn't understand your request clearly. Try saying: 'Schedule meeting with Rahul at 4pm tomorrow'."
+
 
