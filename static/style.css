@@ -1,120 +1,219 @@
 /* static/style.css */
-body {
-    font-family: Arial, sans-serif;
-    background-color: #f4f7f6;
-    color: #333;
+
+/* Full screen and white-beige theme */
+html, body {
     margin: 0;
-    padding: 20px;
+    padding: 0;
+    width: 100%;
+    min-height: 100vh; /* Ensures full height for both desktop and mobile */
+    font-family: 'Arial', sans-serif; /* A clean, widely available font */
+    color: #333; /* Dark grey for text */
+}
+
+body {
+    background-color: #F8F8F8; /* Light white-beige for the background */
+    display: flex;
+    justify-content: center; /* Center horizontally */
+    align-items: center; /* Center vertically */
+    padding: 20px; /* Some padding around the edge */
+    box-sizing: border-box; /* Include padding in element's total width and height */
+}
+
+/* Page wrapper for full-screen content alignment */
+.page-wrapper {
     display: flex;
     justify-content: center;
-    align-items: flex-start; /* Align to top */
-    min-height: 100vh;
+    align-items: center;
+    width: 100%;
+    min-height: calc(100vh - 40px); /* Account for body padding */
+    box-sizing: border-box;
 }
 
 .container {
-    background-color: #ffffff;
-    padding: 30px;
-    border-radius: 8px;
-    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+    background-color: #FFFFFF; /* Pure white for the main content box */
+    padding: 40px; /* More padding for a softer feel */
+    border-radius: 12px; /* Slightly more rounded corners */
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.08); /* Softer, more spread out shadow */
     width: 100%;
-    max-width: 600px;
+    max-width: 650px; /* Slightly wider max-width for better laptop experience */
     text-align: center;
+    box-sizing: border-box;
+    /* Added for responsiveness on smaller screens */
+    margin: 0 auto; /* Center container if max-width is not reached */
 }
 
+/* Typography */
 h1 {
-    color: #4a4a4a;
+    color: #4A4A4A; /* Slightly darker grey for headings */
     margin-bottom: 25px;
-    font-size: 2em;
+    font-size: 2.5em; /* Larger heading */
+    font-weight: bold;
 }
 
 p {
     margin-bottom: 15px;
     line-height: 1.6;
+    font-size: 1.1em; /* Slightly larger text */
 }
 
+/* Form Elements */
 .query-form {
     display: flex;
-    gap: 10px;
-    margin-top: 20px;
-    margin-bottom: 20px;
+    flex-direction: column; /* Stack input and button on small screens */
+    gap: 15px; /* More space between elements */
+    margin-top: 30px;
+    margin-bottom: 25px;
 }
 
 .query-form input[type="text"] {
     flex-grow: 1;
-    padding: 12px 15px;
-    border: 1px solid #ccc;
-    border-radius: 5px;
-    font-size: 1em;
+    padding: 14px 18px; /* Larger padding for input */
+    border: 1px solid #DCDCDC; /* Lighter border */
+    border-radius: 8px; /* More rounded */
+    font-size: 1.1em;
+    outline: none; /* Remove default outline */
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.query-form input[type="text"]:focus {
+    border-color: #B0C4DE; /* Light blue on focus */
+    box-shadow: 0 0 0 3px rgba(176, 196, 222, 0.3); /* Subtle blue glow */
 }
 
 .query-form button {
-    padding: 12px 20px;
-    background-color: #4CAF50; /* Green */
+    padding: 14px 25px; /* Larger padding for button */
+    background-color: #8FBC8F; /* Soft green */
     color: white;
     border: none;
-    border-radius: 5px;
+    border-radius: 8px; /* More rounded */
     cursor: pointer;
-    font-size: 1em;
-    transition: background-color 0.3s ease;
+    font-size: 1.1em;
+    font-weight: bold;
+    transition: background-color 0.3s ease, transform 0.1s ease;
 }
 
 .query-form button:hover {
-    background-color: #45a049;
+    background-color: #7B9F7B; /* Darker green on hover */
+    transform: translateY(-1px); /* Slight lift effect */
 }
 
+.query-form button:active {
+    transform: translateY(0);
+}
+
+/* Response Box */
 .response-box {
-    background-color: #e9f7ef; /* Light green */
-    border: 1px solid #d4edda;
-    border-radius: 5px;
-    padding: 15px;
-    margin-top: 20px;
+    background-color: #F0F8F0; /* Very light green, almost white-green */
+    border: 1px solid #D4E0D4; /* Soft green border */
+    border-radius: 8px;
+    padding: 20px;
+    margin-top: 30px;
     text-align: left;
     white-space: pre-wrap; /* Preserve whitespace and line breaks */
     word-wrap: break-word; /* Break long words */
-    color: #155724; /* Dark green text */
+    color: #2F4F4F; /* Dark slate grey for response text */
+    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.05); /* Subtle inner shadow */
+}
+
+.response-box p {
+    margin-bottom: 0; /* Remove bottom margin from last paragraph */
+    font-size: 1em; /* Keep response text standard size */
 }
 
 .response-box strong {
-    color: #0d3d19;
+    color: #006400; /* Dark green for strong text in response */
 }
 
-
+/* Action Buttons (Login/Logout) */
 .actions {
-    margin-top: 25px;
+    margin-top: 30px;
 }
 
 .button {
     display: inline-block;
-    padding: 10px 20px;
-    border-radius: 5px;
+    padding: 12px 25px;
+    border-radius: 8px;
     text-decoration: none;
     font-weight: bold;
-    transition: background-color 0.3s ease;
+    font-size: 1.05em;
+    transition: background-color 0.3s ease, transform 0.1s ease;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1); /* Subtle button shadow */
 }
 
 .login-button {
-    background-color: #4285F4; /* Google Blue */
+    background-color: #6495ED; /* Cornflower Blue */
     color: white;
 }
 
 .login-button:hover {
-    background-color: #357ae8;
+    background-color: #5B89D0;
+    transform: translateY(-1px);
 }
 
 .logout-button {
-    background-color: #f44336; /* Red */
+    background-color: #DC143C; /* Crimson Red */
     color: white;
 }
 
 .logout-button:hover {
-    background-color: #da190b;
+    background-color: #C00F2F;
+    transform: translateY(-1px);
 }
 
+/* Error Message */
 .error-message {
-    color: #d8000c; /* Dark red */
-    background-color: #ffbaba; /* Light red */
-    border: 1px solid #d8000c;
-    border-radius: 5px;
-    padding: 10px;
-    margin-top: 20px;
+    color: #B22222; /* Firebrick red */
+    background-color: #FFDCDC; /* Lighter red background */
+    border: 1px solid #DC143C;
+    border-radius: 8px;
+    padding: 12px;
+    margin-top: 25px;
+    font-weight: bold;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    body {
+        padding: 15px;
+        align-items: flex-start; /* Align to top on smaller screens */
+    }
+
+    .page-wrapper {
+        min-height: auto; /* Allow height to adjust naturally */
+        padding: 15px 0; /* Add vertical padding */
+    }
+
+    .container {
+        padding: 25px; /* Reduce padding on small screens */
+        border-radius: 8px;
+        box-shadow: 0 3px 10px rgba(0, 0, 0, 0.07);
+    }
+
+    h1 {
+        font-size: 2em; /* Smaller heading on mobile */
+    }
+
+    .query-form {
+        flex-direction: column; /* Ensure stacked on small screens */
+    }
+
+    .query-form input,
+    .query-form button,
+    .button {
+        padding: 12px 15px; /* Slightly smaller padding for controls */
+        font-size: 1em;
+    }
+
+    .response-box, .error-message {
+        padding: 15px;
+    }
+}
+
+@media (max-width: 480px) {
+    .container {
+        padding: 20px;
+    }
+    h1 {
+        font-size: 1.8em;
+    }
 }
