@@ -296,4 +296,3 @@ def is_time_slot_busy(service, start_iso, end_iso):
     fb = service.freebusy().query(body=body).execute()
     return bool(fb["calendars"]["primary"]["busy"])
 
-calendar_assistant.py
