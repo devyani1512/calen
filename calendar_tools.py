@@ -181,6 +181,11 @@ def handle_calendar_command(user_input: str, creds):
             event = create_event_from_input(user_input)
             if not event:
                 return "❌ I couldn't understand the date/time for the event. Try including a specific time."
+
+            # Check for busy slots before booking
+            if is_time_slot_busy(service, event["start"]["dateTime"], event["end"]["dateTime"]):
+                return f"❌ You're already busy during **{event['start']['dateTime']} to {event['end']['dateTime']} UTC**. Try a different time."
+
             inserted = service.events().insert(calendarId='primary', body=event).execute()
             return f"✅ Event **'{inserted.get('summary')}'** booked at **{inserted['start']['dateTime']} UTC**"
 
@@ -202,12 +207,12 @@ def handle_calendar_command(user_input: str, creds):
 
         # Availability intent
         elif any(word in lc_input for word in ["free", "available", "busy"]):
-            time_min = datetime.utcnow()
+            time_min = datetime.now(pytz.timezone("Asia/Kolkata"))
             time_max = time_min + timedelta(days=1)
 
             body = {
-                "timeMin": time_min.isoformat() + "Z",
-                "timeMax": time_max.isoformat() + "Z",
+                "timeMin": time_min.astimezone(pytz.utc).isoformat(),
+                "timeMax": time_max.astimezone(pytz.utc).isoformat(),
                 "timeZone": "UTC",
                 "items": [{"id": "primary"}],
             }
@@ -244,7 +249,6 @@ def create_event_from_input(user_input: str):
 
     dt = found[0][1]  # Start time
 
-    # Try to extract an end time (e.g. "from 10am to 11am")
     if len(found) >= 2:
         dt_end = found[1][1]
     else:
@@ -263,7 +267,6 @@ def create_event_from_input(user_input: str):
     }
 
 
-
 def extract_summary(text: str):
     for marker in ["called", "about", "titled", "named"]:
         if marker in text:
@@ -273,7 +276,19 @@ def extract_summary(text: str):
     # Fallback: extract meaningful tokens after keywords like "book", etc.
     tokens = text.split()
     for i, token in enumerate(tokens):
-        if token.lower() in ["book", "schedule", "add"]:
+        if token.lower() in ["book", "schedule", "add", "create"]:
             return " ".join(tokens[i+1:i+6]).capitalize()
     return "Meeting"
 
+
+def is_time_slot_busy(service, start_iso, end_iso):
+    """Check if there's any conflict in the given time range."""
+    body = {
+        "timeMin": start_iso,
+        "timeMax": end_iso,
+        "timeZone": "UTC",
+        "items": [{"id": "primary"}],
+    }
+
+    fb = service.freebusy().query(body=body).execute()
+    return bool(fb["calendars"]["primary"]["busy"])
