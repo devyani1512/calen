@@ -299,100 +299,73 @@
 # calendar_assistant.py
 import os
 import json
+from datetime import datetime, timedelta
 import pytz
 import dateparser
-from datetime import datetime, timedelta
-from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
+from google.oauth2.credentials import Credentials
+from models import db, User
 
-# ------------------------------
-# STEP 1: Load Google Credentials
-# ------------------------------
+# 👇 Fetch Google credentials for the current user from session
 def get_google_credentials():
-    creds_json = os.getenv("CLIENT_CONFIG_JSON")  # This should contain user OAuth tokens
-    if not creds_json:
-        raise ValueError("Missing USER_CREDS_JSON env variable")
-    info = json.loads(creds_json)
-    return Credentials.from_authorized_user_info(info)
+    from flask import session
+    user_id = session.get("user_id")
+    if not user_id:
+        raise ValueError("No user logged in")
 
-# ------------------------------
-# STEP 2: Book event on calendar
-# ------------------------------
-def book_event_on_calendar(service, start_time, end_time, summary="Meeting via Assistant"):
-    event = {
-        'summary': summary,
-        'start': {
-            'dateTime': start_time.isoformat(),
-            'timeZone': 'Asia/Kolkata',
-        },
-        'end': {
-            'dateTime': end_time.isoformat(),
-            'timeZone': 'Asia/Kolkata',
-        },
-    }
-    event = service.events().insert(calendarId='primary', body=event).execute()
-    return f"Event booked: {event.get('htmlLink')}"
+    user = User.query.filter_by(id=user_id).first()
+    if not user or not user.credentials_json:
+        raise ValueError("Missing stored credentials for user")
 
-# ------------------------------
-# STEP 3: Tool function for OpenAI
-# ------------------------------
-def handle_calendar_command(user_input: str,creds):
-    creds = get_google_credentials()
-    service = build("calendar", "v3", credentials=creds)
+    user_info = json.loads(user.credentials_json)
 
-    # Parse the datetime from user input
-    parsed_time = dateparser.parse(
-        user_input,
-        settings={
-            'PREFER_DATES_FROM': 'future',
-            'TIMEZONE': 'Asia/Kolkata',
-            'RETURN_AS_TIMEZONE_AWARE': True
-        }
+    creds = Credentials(
+        token=user_info["token"],
+        refresh_token=user_info["refresh_token"],
+        token_uri=user_info["token_uri"],
+        client_id=user_info["client_id"],
+        client_secret=user_info["client_secret"],
+        scopes=user_info["scopes"]
     )
+    return creds
 
-    if not parsed_time:
-        return "Sorry, I couldn't understand the time you mentioned."
+# 👇 Build Google Calendar service
+def get_calendar_service(creds):
+    return build("calendar", "v3", credentials=creds)
 
-    # Default to 10 AM if time not specified
-    if parsed_time.hour == 0 and parsed_time.minute == 0:
-        parsed_time = parsed_time.replace(hour=10, minute=0)
+# 📅 Book an event with given title and start/end times (in IST)
+def book_event(title, start_time_str, end_time_str):
+    creds = get_google_credentials()
+    service = get_calendar_service(creds)
 
-    start_time = parsed_time
-    end_time = start_time + timedelta(hours=1)
+    ist = pytz.timezone("Asia/Kolkata")
+    start_dt = dateparser.parse(start_time_str, settings={"TIMEZONE": "Asia/Kolkata", "RETURN_AS_TIMEZONE_AWARE": True})
+    end_dt = dateparser.parse(end_time_str, settings={"TIMEZONE": "Asia/Kolkata", "RETURN_AS_TIMEZONE_AWARE": True})
 
-    # Check for availability
-    busy = service.freebusy().query(body={
-        "timeMin": start_time.isoformat(),
-        "timeMax": end_time.isoformat(),
-        "timeZone": 'Asia/Kolkata',
-        "items": [{"id": 'primary'}]
-    }).execute()
+    if not start_dt or not end_dt:
+        return "❌ Could not parse time. Please provide valid time."
 
-    busy_times = busy['calendars']['primary']['busy']
-    if busy_times:
-        return f"You're already busy during that time on {start_time.strftime('%b %d')}. Try another time?"
-
-    return book_event_on_calendar(service, start_time, end_time)
-
-# ------------------------------
-# STEP 4: Tool registration schema for OpenAI
-# ------------------------------
-openai_tool_definition = {
-    "type": "function",
-    "function": {
-        "name": "handle_calendar_command",
-        "description": "Books a meeting on user's Google Calendar based on natural language",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "user_input": {
-                    "type": "string",
-                    "description": "The user's request to schedule a meeting, like 'book meeting on Monday at 3pm'"
-                }
-            },
-            "required": ["user_input"]
-        }
+    event = {
+        'summary': title,
+        'start': {'dateTime': start_dt.isoformat(), 'timeZone': 'Asia/Kolkata'},
+        'end': {'dateTime': end_dt.isoformat(), 'timeZone': 'Asia/Kolkata'}
     }
-}
 
-# Usage example in assistant tools list: [handle_calendar_command] with schema above.
+    created_event = service.events().insert(calendarId='primary', body=event).execute()
+    return f"✅ Event '{title}' booked from {start_dt.strftime('%I:%M %p')} to {end_dt.strftime('%I:%M %p')}"
+
+# 🧠 Handle natural language command
+def handle_calendar_command(user_input, creds=None):
+    if "book" in user_input.lower():
+        # simplistic parse: "Book meeting from 3pm to 4pm"
+        import re
+        match = re.search(r'book (.*?) from (.*?) to (.*?)$', user_input, re.IGNORECASE)
+        if match:
+            title = match.group(1)
+            start_time = match.group(2)
+            end_time = match.group(3)
+            return book_event(title, start_time, end_time)
+        else:
+            return "❌ Sorry, I couldn't understand the booking format. Try: Book meeting from 3pm to 4pm"
+
+    return "❓ I'm not sure what you want to do. Try saying: Book meeting from 3pm to 4pm"
