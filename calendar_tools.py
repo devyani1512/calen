@@ -296,27 +296,29 @@
 #     fb = service.freebusy().query(body=body).execute()
 #     return bool(fb["calendars"]["primary"]["busy"])
 
-
-
-import datetime
-from googleapiclient.discovery import build
-from googleapiclient.errors import HttpError
-from google.auth.exceptions import RefreshError
+# calendar_assistant.py
+import os
+import json
+import pytz
+import dateparser
+from datetime import datetime, timedelta
 from google.oauth2.credentials import Credentials
+from googleapiclient.discovery import build
 
+# ------------------------------
+# STEP 1: Load Google Credentials
+# ------------------------------
+def get_google_credentials():
+    creds_json = os.getenv("USER_CREDS_JSON")  # This should contain user OAuth tokens
+    if not creds_json:
+        raise ValueError("Missing USER_CREDS_JSON env variable")
+    info = json.loads(creds_json)
+    return Credentials.from_authorized_user_info(info)
 
-def authenticate_user(creds):
-    if not creds or not creds.valid:
-        raise Exception("Invalid or missing Google credentials.")
-
-    try:
-        service = build("calendar", "v3", credentials=creds)
-        return service
-    except RefreshError:
-        raise Exception("Google credentials refresh failed.")
-
-
-def create_event(service, summary, start_time, end_time):
+# ------------------------------
+# STEP 2: Book event on calendar
+# ------------------------------
+def book_event_on_calendar(service, start_time, end_time, summary="Meeting via Assistant"):
     event = {
         'summary': summary,
         'start': {
@@ -328,56 +330,69 @@ def create_event(service, summary, start_time, end_time):
             'timeZone': 'Asia/Kolkata',
         },
     }
+    event = service.events().insert(calendarId='primary', body=event).execute()
+    return f"Event booked: {event.get('htmlLink')}"
 
-    try:
-        event = service.events().insert(calendarId='primary', body=event).execute()
-        return f"Event created: {event.get('htmlLink')}"
-    except HttpError as error:
-        raise Exception(f"An error occurred: {error}")
+# ------------------------------
+# STEP 3: Tool function for OpenAI
+# ------------------------------
+def handle_calendar_command(user_input: str):
+    creds = get_google_credentials()
+    service = build("calendar", "v3", credentials=creds)
 
+    # Parse the datetime from user input
+    parsed_time = dateparser.parse(
+        user_input,
+        settings={
+            'PREFER_DATES_FROM': 'future',
+            'TIMEZONE': 'Asia/Kolkata',
+            'RETURN_AS_TIMEZONE_AWARE': True
+        }
+    )
 
-def list_events(service, max_results=5):
-    now = datetime.datetime.utcnow().isoformat() + 'Z'
-    try:
-        events_result = service.events().list(
-            calendarId='primary', timeMin=now,
-            maxResults=max_results, singleEvents=True,
-            orderBy='startTime').execute()
-        events = events_result.get('items', [])
+    if not parsed_time:
+        return "Sorry, I couldn't understand the time you mentioned."
 
-        if not events:
-            return "No upcoming events found."
+    # Default to 10 AM if time not specified
+    if parsed_time.hour == 0 and parsed_time.minute == 0:
+        parsed_time = parsed_time.replace(hour=10, minute=0)
 
-        output = []
-        for event in events:
-            start = event['start'].get('dateTime', event['start'].get('date'))
-            output.append(f"{event['summary']} at {start}")
-        return "\n".join(output)
+    start_time = parsed_time
+    end_time = start_time + timedelta(hours=1)
 
-    except HttpError as error:
-        raise Exception(f"An error occurred: {error}")
+    # Check for availability
+    busy = service.freebusy().query(body={
+        "timeMin": start_time.isoformat(),
+        "timeMax": end_time.isoformat(),
+        "timeZone": 'Asia/Kolkata',
+        "items": [{"id": 'primary'}]
+    }).execute()
 
+    busy_times = busy['calendars']['primary']['busy']
+    if busy_times:
+        return f"You're already busy during that time on {start_time.strftime('%b %d')}. Try another time?"
 
-def handle_calendar_command(user_input, creds):
-    service = authenticate_user(creds)
+    return book_event_on_calendar(service, start_time, end_time)
 
-    import re
-    import dateparser
+# ------------------------------
+# STEP 4: Tool registration schema for OpenAI
+# ------------------------------
+openai_tool_definition = {
+    "type": "function",
+    "function": {
+        "name": "handle_calendar_command",
+        "description": "Books a meeting on user's Google Calendar based on natural language",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "user_input": {
+                    "type": "string",
+                    "description": "The user's request to schedule a meeting, like 'book meeting on Monday at 3pm'"
+                }
+            },
+            "required": ["user_input"]
+        }
+    }
+}
 
-    if match := re.search(r"add (.+) to my calendar.*?(on|for)? (.+)", user_input, re.IGNORECASE):
-        summary = match.group(1).strip()
-        time_text = match.group(3).strip()
-
-        parsed_time = dateparser.parse(time_text, settings={'PREFER_DATES_FROM': 'future'})
-        if not parsed_time:
-            return "Sorry, I couldn't understand the date/time."
-
-        start_time = parsed_time
-        end_time = start_time + datetime.timedelta(hours=1)
-        return create_event(service, summary, start_time, end_time)
-
-    elif "what's on my calendar" in user_input.lower() or "list events" in user_input.lower():
-        return list_events(service)
-
-    else:
-        return "Sorry, I couldn't understand the command. Try something like: 'Add team sync to my calendar for Monday 10am'."
+# Usage example in assistant tools list: [handle_calendar_command] with schema above.
