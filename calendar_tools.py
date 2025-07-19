@@ -229,7 +229,16 @@ def handle_calendar_command(user_input: str, creds):
 
 
 def create_event_from_input(user_input: str):
-    found = search_dates(user_input, settings={"PREFER_DATES_FROM": "future"})
+    found = search_dates(
+    user_input,
+    languages=["en"],
+    settings={
+        "PREFER_DATES_FROM": "future",
+        "TIMEZONE": "Asia/Kolkata",
+        "RETURN_AS_TIMEZONE_AWARE": True
+    }
+)
+
     if not found:
         return None
 
