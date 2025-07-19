@@ -309,7 +309,7 @@ from googleapiclient.discovery import build
 # STEP 1: Load Google Credentials
 # ------------------------------
 def get_google_credentials():
-    creds_json = os.getenv("USER_CREDS_JSON")  # This should contain user OAuth tokens
+    creds_json = os.getenv("CLIENT_CONFIG_JSON")  # This should contain user OAuth tokens
     if not creds_json:
         raise ValueError("Missing USER_CREDS_JSON env variable")
     info = json.loads(creds_json)
