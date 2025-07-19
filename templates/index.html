@@ -7,34 +7,35 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
-    <div class="container">
-        <h1>🗓️ Calendar Assistant</h1>
+    <div class="page-wrapper"> {# NEW: Added this wrapper div #}
+        <div class="container">
+            <h1>🗓️ Calendar Assistant</h1>
 
-        {% if user_email %}
-            <p>Logged in as: <strong>{{ user_email }}</strong></p>
-            <form method="POST" class="query-form">
-                <input type="text" name="query" placeholder="Ask about your calendar..." required>
-                <button type="submit">Ask</button>
-            </form>
+            {% if user_email %}
+                <p>Logged in as: <strong>{{ user_email }}</strong></p>
+                <form method="POST" class="query-form">
+                    <input type="text" name="query" placeholder="Ask about your calendar..." required>
+                    <button type="submit">Ask</button>
+                </form>
 
-            {% if response %}
-                <div class="response-box">
-                    <p><strong>Response:</strong></p>
-                    <p>{{ response }}</p>
+                {% if response %}
+                    <div class="response-box">
+                        <p><strong>Response:</strong></p>
+                        <p>{{ response }}</p>
+                    </div>
+                {% endif %}
+                <div class="actions">
+                    <a href="{{ url_for('logout') }}" class="button logout-button">Logout</a>
                 </div>
+            {% else %}
+                <p>Welcome! Please log in to manage your calendar.</p>
+                <a href="{{ url_for('login') }}" class="button login-button">Login with Google</a>
             {% endif %}
-            <div class="actions">
-                <a href="{{ url_for('logout') }}" class="button logout-button">Logout</a>
-            </div>
-        {% else %}
-            <p>Welcome! Please log in to manage your calendar.</p>
-            <a href="{{ url_for('login') }}" class="button login-button">Login with Google</a>
-        {% endif %}
 
-        {% if error %}
-            <p class="error-message">{{ error }}</p>
-        {% endif %}
-    </div>
+            {% if error %}
+                <p class="error-message">{{ error }}</p>
+            {% endif %}
+        </div>
+    </div> {# NEW: Closed the wrapper div #}
 </body>
 </html>
-
