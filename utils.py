@@ -26,11 +26,22 @@ def ask_openai(query: str, creds):
         }
     ]
 
-    messages = [{"role": "user", "content": query}]
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "You are a helpful calendar assistant. If the user asks anything related to calendar tasks—"
+                "such as booking, canceling, checking availability, rescheduling, or anything about dates, times, "
+                "or events—**always** call the tool `handle_calendar_command` with the raw user input. "
+                "Do not attempt to answer such queries directly yourself. Always rely on the tool."
+            )
+        },
+        {"role": "user", "content": query}
+    ]
 
     # Initial model call
     response = client.chat.completions.create(
-        model="gpt-4o",  # Changed to gpt-4o to avoid 403 error
+        model="gpt-4o",
         messages=messages,
         tools=tools,
         tool_choice="auto"
@@ -70,6 +81,7 @@ def ask_openai(query: str, creds):
 
     # No tool called, just return direct response
     return choice.message.content
+
 
 
 
