@@ -88,6 +88,8 @@ from openai import OpenAI
 import os
 import json
 from calendar_tools import handle_calendar_command # Make sure this import is correct
+from datetime import datetime
+import pytz
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
