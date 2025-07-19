@@ -336,7 +336,7 @@ def book_event_on_calendar(service, start_time, end_time, summary="Meeting via A
 # ------------------------------
 # STEP 3: Tool function for OpenAI
 # ------------------------------
-def handle_calendar_command(user_input: str):
+def handle_calendar_command(user_input: str,creds):
     creds = get_google_credentials()
     service = build("calendar", "v3", credentials=creds)
 
