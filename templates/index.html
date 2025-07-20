@@ -53,7 +53,7 @@
 <body>
     <div class="page-wrapper">
         <div class="container">
-            <h1>🗓️ Calendar Assistant</h1>
+            <h1> Calendar Assistant</h1>
 
             {% if user_email %}
                 <p>Logged in as: <strong>{{ user_email }}</strong></p>
@@ -113,7 +113,7 @@
 
             recognition.onstart = () => {
                 isListening = true;
-                voiceInputButton.textContent = '🔴 Listening...';
+                voiceInputButton.textContent = ' Listening...';
                 voiceInputButton.classList.add('listening');
                 console.log('Speech recognition started');
             };
@@ -135,7 +135,7 @@
 
             recognition.onend = () => {
                 isListening = false;
-                voiceInputButton.textContent = '🎤 Voice Input';
+                voiceInputButton.textContent = ' Voice Input';
                 voiceInputButton.classList.remove('listening');
                 console.log('Speech recognition ended');
             };
