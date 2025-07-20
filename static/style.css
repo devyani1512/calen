@@ -143,6 +143,59 @@ p {
   text-shadow: 0 0 10px rgba(139, 195, 74, 0.3);
 }
 
+/* Response box interactive elements */
+.response-box button,
+.response-box .button,
+.response-box a[role="button"],
+.response-box .read-response,
+.response-box .interactive-element {
+  background: linear-gradient(135deg, #2e7d32 0%, #1b5e20 100%) !important;
+  color: #f5f1eb !important;
+  border: 2px solid #4a5d4a !important;
+  border-radius: 8px !important;
+  padding: 10px 16px !important;
+  font-size: 0.9em !important;
+  font-weight: bold !important;
+  text-decoration: none !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  transition: all 0.3s ease !important;
+  box-shadow: 0 3px 8px rgba(46, 125, 50, 0.3) !important;
+  cursor: pointer !important;
+}
+
+.response-box button:hover,
+.response-box .button:hover,
+.response-box a[role="button"]:hover,
+.response-box .read-response:hover,
+.response-box .interactive-element:hover {
+  background: linear-gradient(135deg, #388e3c 0%, #2e7d32 100%) !important;
+  transform: translateY(-1px) !important;
+  box-shadow: 0 4px 12px rgba(46, 125, 50, 0.5) !important;
+  border-color: #8bc34a !important;
+}
+
+.response-box button:active,
+.response-box .button:active,
+.response-box a[role="button"]:active,
+.response-box .read-response:active,
+.response-box .interactive-element:active {
+  transform: translateY(0) !important;
+}
+
+/* Icons inside response box buttons */
+.response-box button svg,
+.response-box .button svg,
+.response-box a[role="button"] svg,
+.response-box .read-response svg,
+.response-box .interactive-element svg {
+  fill: #f5f1eb !important;
+  color: #f5f1eb !important;
+  width: 16px !important;
+  height: 16px !important;
+}
+
 /* Action Buttons (Login/Logout) */
 .actions {
   margin-top: 30px;
