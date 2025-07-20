@@ -50,7 +50,7 @@ def oauth_callback():
 
     creds = flow.credentials
 
-    # 👉 Fetch user email & name
+    #  Fetch user email & name
     userinfo_service = build('oauth2', 'v2', credentials=creds)
     userinfo = userinfo_service.userinfo().get().execute()
     email = userinfo.get("email")
@@ -69,9 +69,9 @@ def oauth_callback():
         "scopes": creds.scopes
     }
 
-    print("🔐 Saving user:", email)
+    print(" Saving user:", email)
 
-    # 🔄 Create or update user
+    # Create or update user
     user = User.query.filter_by(email=email).first()
     if not user:
         user = User(email=email, name=name, credentials_json=json.dumps(user_info))
