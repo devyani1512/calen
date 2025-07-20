@@ -340,7 +340,7 @@ def handle_calendar_command(user_command: dict, creds):
 
 
         # Default or unrecognized intent
-        return "🤖 I understood your message but couldn't match it to a known calendar command. Please provide structured intent and parameters."
+        return " I understood your message but couldn't match it to a known calendar command. Please provide structured intent and parameters."
 
     except HttpError as e:
         return f" Google Calendar API error: {e}"
