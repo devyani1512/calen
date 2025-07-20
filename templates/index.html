@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!-- <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -37,5 +37,172 @@
             {% endif %}
         </div>
     </div> {# NEW: Closed the wrapper div #}
+</body>
+</html> -->
+
+
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Calendar Assistant</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="page-wrapper">
+        <div class="container">
+            <h1>🗓️ Calendar Assistant</h1>
+
+            {% if user_email %}
+                <p>Logged in as: <strong>{{ user_email }}</strong></p>
+                <form method="POST" class="query-form" id="queryForm"> {# Added id="queryForm" #}
+                    <input type="text" name="query" id="queryInput" placeholder="Ask about your calendar..." required> {# Added id="queryInput" #}
+                    <div class="form-buttons"> {# New div for buttons #}
+                        <button type="submit">Ask</button>
+                        <button type="button" id="voiceInputButton" class="voice-button">
+                            🎤 Voice Input
+                        </button>
+                    </div>
+                </form>
+
+                {% if response %}
+                    <div class="response-box" id="responseBox"> {# Added id="responseBox" #}
+                        <p><strong>Response:</strong></p>
+                        <p>{{ response }}</p>
+                        <button type="button" id="readResponseButton" class="read-button">
+                            🔊 Read Response
+                        </button>
+                    </div>
+                {% endif %}
+                <div class="actions">
+                    <a href="{{ url_for('logout') }}" class="button logout-button">Logout</a>
+                </div>
+            {% else %}
+                <p>Welcome! Please log in to manage your calendar.</p>
+                <a href="{{ url_for('login') }}" class="button login-button">Login with Google</a>
+            {% endif %}
+
+            {% if error %}
+                <p class="error-message">{{ error }}</p>
+            {% endif %}
+        </div>
+    </div>
+
+    <script>
+        // Check for Web Speech API browser compatibility
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        const SpeechSynthesis = window.speechSynthesis;
+
+        const queryInput = document.getElementById('queryInput');
+        const voiceInputButton = document.getElementById('voiceInputButton');
+        const queryForm = document.getElementById('queryForm');
+        const responseBox = document.getElementById('responseBox'); // Get the response box
+        const readResponseButton = document.getElementById('readResponseButton'); // Get the read response button
+
+        let recognition;
+        let isListening = false;
+
+        // Initialize Speech Recognition
+        if (SpeechRecognition) {
+            recognition = new SpeechRecognition();
+            recognition.continuous = false; // Only one utterance at a time
+            recognition.lang = 'en-US'; // You might want to set this to 'en-IN' for Indian English if preferred
+            recognition.interimResults = false; // Only final results
+
+            recognition.onstart = () => {
+                isListening = true;
+                voiceInputButton.textContent = '🔴 Listening...';
+                voiceInputButton.classList.add('listening');
+                console.log('Speech recognition started');
+            };
+
+            recognition.onresult = (event) => {
+                const transcript = event.results[0][0].transcript;
+                queryInput.value = transcript; // Put the recognized text into the input field
+                console.log('Recognized:', transcript);
+                queryForm.submit(); // Automatically submit the form
+            };
+
+            recognition.onerror = (event) => {
+                console.error('Speech recognition error:', event.error);
+                voiceInputButton.textContent = '🎤 Voice Input';
+                voiceInputButton.classList.remove('listening');
+                isListening = false;
+                alert('Speech recognition error: ' + event.error + '. Please try again or type your query.');
+            };
+
+            recognition.onend = () => {
+                isListening = false;
+                voiceInputButton.textContent = '🎤 Voice Input';
+                voiceInputButton.classList.remove('listening');
+                console.log('Speech recognition ended');
+            };
+
+            voiceInputButton.addEventListener('click', () => {
+                if (!isListening) {
+                    recognition.start();
+                } else {
+                    recognition.stop();
+                }
+            });
+        } else {
+            // Hide the voice input button if not supported
+            if (voiceInputButton) {
+                voiceInputButton.style.display = 'none';
+            }
+            console.warn('Web Speech API (Speech Recognition) not supported in this browser.');
+        }
+
+        // Initialize Speech Synthesis (Text-to-Speech)
+        if (SpeechSynthesis) {
+            if (readResponseButton && responseBox) {
+                readResponseButton.addEventListener('click', () => {
+                    const responseTextElement = responseBox.querySelector('p:last-child'); // Get the actual response text paragraph
+                    if (responseTextElement && responseTextElement.textContent) {
+                        const responseText = responseTextElement.textContent;
+                        const utterance = new SpeechSynthesisUtterance(responseText);
+
+                        // Optional: Set voice, pitch, rate
+                        // You can iterate through SpeechSynthesis.getVoices() to find suitable ones
+                        // utterance.voice = SpeechSynthesis.getVoices().find(voice => voice.name === 'Google US English'); // Example
+                        utterance.pitch = 1; // Default
+                        utterance.rate = 1;  // Default
+
+                        SpeechSynthesis.speak(utterance);
+
+                        utterance.onerror = (event) => {
+                            console.error('Speech synthesis error:', event.error);
+                        };
+                    } else {
+                        console.warn('No response text to read.');
+                    }
+                });
+            }
+        } else {
+            // Hide the read response button if not supported
+            if (readResponseButton) {
+                readResponseButton.style.display = 'none';
+            }
+            console.warn('Web Speech API (Speech Synthesis) not supported in this browser.');
+        }
+
+        // Optional: Auto-read response if available on page load (e.g., after form submission)
+        document.addEventListener('DOMContentLoaded', () => {
+            if (responseBox && responseBox.querySelector('p:last-child').textContent.trim() !== '' && SpeechSynthesis) {
+                // Delay slightly to ensure voices are loaded
+                setTimeout(() => {
+                    const responseTextElement = responseBox.querySelector('p:last-child');
+                    if (responseTextElement && responseTextElement.textContent) {
+                        const responseText = responseTextElement.textContent;
+                        const utterance = new SpeechSynthesisUtterance(responseText);
+                        SpeechSynthesis.speak(utterance);
+                    }
+                }, 500); // 500ms delay
+            }
+        });
+
+    </script>
 </body>
 </html>
