@@ -21,7 +21,7 @@ A voice-enabled web assistant that helps users manage their Google Calendar thro
 | Calendar   | Google Calendar API                        |
 | Auth       | OAuth 2.0 (Google Client-Based Login)      |
 | Frontend   | HTML5, CSS3, JavaScript                    |
-| Hosting    | Netlify (Frontend), Render or Heroku       |
+| Hosting    |  Render                                    |
 | Extras     | Web Speech API, pyngrok (for testing)      |
 
 ## Project Structure
