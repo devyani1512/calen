@@ -73,7 +73,7 @@ Then visit: [http://localhost:5000](http://localhost:5000)
 
 | Login Interface          | Query Panel              |
 |--------------------------|--------------------------|
-| ![Login](screenshots/login.png) | ![Query](screenshots/query.png) |
+| ![Login](login.jpg) | ![Query](query.jpg) |
 
 ## Prompt Workflow
 
