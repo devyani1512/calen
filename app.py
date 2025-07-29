@@ -1,7 +1,7 @@
 
 import os
 import json
-from flask import Flask, redirect, url_for, session, request, render_template # Changed import
+from flask import Flask, redirect, url_for, session, request, render_template 
 from flask_sqlalchemy import SQLAlchemy
 from google_auth_oauthlib.flow import Flow
 from google.oauth2.credentials import Credentials
@@ -10,7 +10,7 @@ from models import db, User
 from utils import ask_openai
 
 app = Flask(__name__)
-app.secret_key = os.getenv("SECRET_KEY", "dev") # Change in production
+app.secret_key = os.getenv("SECRET_KEY", "dev") 
 
 #  Configure DB 
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -21,7 +21,7 @@ app.config["SQLALCHEMY_DATABASE_URI"] = DATABASE_URL
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 db.init_app(app)
 
-# Load client config from environment 
+
 CLIENT_CONFIG_JSON = os.getenv("CLIENT_CONFIG_JSON")
 client_config = json.loads(CLIENT_CONFIG_JSON)
 
@@ -46,18 +46,18 @@ def index():
             if user:
                 credentials_info = json.loads(user.credentials_json)
                 creds = Credentials.from_authorized_user_info(credentials_info, SCOPES)
-                response_message = ask_openai(query, creds) # Store response
+                response_message = ask_openai(query, creds)
             else:
                 error_message = "User not found in database. Please re-login."
         else:
             error_message = "You need to log in to ask something."
     
-    # Pass all relevant variables to the template
+    
     return render_template(
         "index.html",
         user_email=user_email,
-        response=response_message, # Pass the response message
-        error=error_message       # Pass the error message
+        response=response_message, 
+        error=error_message     
     )
 
 
