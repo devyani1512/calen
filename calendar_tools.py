@@ -11,8 +11,8 @@ import json
 
 
 
-CALENDAR_ID = "primary"  # Using 'primary' for user's default calendar as in original code 2
-TIMEZONE = "Asia/Kolkata" # Keeping timezone consistent with original code 1 setup
+CALENDAR_ID = "primary"  # Using 'primary' for user's default calendar
+TIMEZONE = "Asia/Kolkata" 
 
 def parse_date_time(date_str, time_str):
     """Parses a date and time string into a timezone-aware datetime object."""
@@ -22,7 +22,7 @@ def parse_date_time(date_str, time_str):
         settings={"TIMEZONE": TIMEZONE, "RETURN_AS_TIMEZONE_AWARE": True}
     )
     if parsed_dt and not parsed_dt.tzinfo:
-        # If dateparser doesn't make it timezone aware, assume the set TIMEZONE
+        # If dateparser doesn't make it timezone aware,we assume the set TIMEZONE
         local_tz = pytz.timezone(TIMEZONE)
         parsed_dt = local_tz.localize(parsed_dt)
     return parsed_dt
@@ -40,12 +40,12 @@ def parse_reminder_string(reminder_str: str) -> list[int]:
     if "hour" in reminder_str:
         parts = reminder_str.split("hour")
         hours_str = parts[0].strip()
-        # Extract digits before "hour"
+        
         hours = "".join(filter(str.isdigit, hours_str))
         if hours:
             reminders.append(int(hours) * 60)
-            if len(parts) > 1: # Check if there's more after "hour"
-                reminder_str = parts[1] # Continue parsing for minutes
+            if len(parts) > 1: 
+                reminder_str = parts[1] 
         else: # Handle cases like "an hour" or "1 hour" where digit extraction might fail for "an"
             if "an " in hours_str or "one " in hours_str:
                 reminders.append(60)
@@ -66,7 +66,7 @@ def parse_reminder_string(reminder_str: str) -> list[int]:
     if not reminders:
         reminders = [15] # Default if nothing is parsed
     
-    # Ensure no duplicates and sort for consistency, though not strictly necessary for overrides
+    
     return sorted(list(set(reminders)))
 
 
