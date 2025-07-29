@@ -1,6 +1,4 @@
 
-
-
 import pytz
 import dateparser
 from datetime import datetime, timedelta
